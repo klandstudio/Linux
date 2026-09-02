@@ -1,4 +1,4 @@
-# Linux for Scale
+# Linux
 
 Practical Linux hardware projects, reverse engineering, and tooling from KLand Studio.
 
