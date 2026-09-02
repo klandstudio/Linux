@@ -15,7 +15,7 @@ Tested on Ubuntu with:
 - HID OUT report: 1024 bytes
 - HID IN report: 512 bytes
 
-The working transaction is:
+The hardware-validated transaction is:
 
 ```text
 0x22 verify device
@@ -31,7 +31,7 @@ Working: 01 30 00 01 00 01 ...
 Failed:  01 30 00 01 00 00 ...
 ```
 
-Changing that one byte after the firmware update made the uploaded Linux image appear immediately.
+Changing that one byte after the firmware update made the uploaded Linux image appear immediately. The exact successful run is preserved in [`VALIDATION.md`](VALIDATION.md).
 
 ## Quick start
 
@@ -43,7 +43,9 @@ sudo python3 examples/show_jpeg.py /path/to/image.jpg
 
 No third-party Python packages are required.
 
-The example performs all device verification and transport checks before activation. It does **not** flash firmware, enter a bootloader, or send undocumented reset commands.
+The public `src/` code is a cleaned refactor of the hardware-validated sequence. The raw sequence and activation bytes are confirmed on the test unit; this cleaned refactor should still be treated as an early implementation until it has been rerun on additional machines/devices.
+
+The example performs device verification and transport checks before activation. It does **not** flash firmware, enter a bootloader, or send undocumented reset commands.
 
 ## Repository layout
 
@@ -51,6 +53,7 @@ The example performs all device verification and transport checks before activat
 projects/phanteks-lcd6-linux/
 ├── README.md
 ├── PROTOCOL.md
+├── VALIDATION.md
 ├── ACKNOWLEDGEMENTS.md
 ├── SHARE_WITH_NEXTUXLINQ.md
 ├── src/
@@ -78,10 +81,11 @@ This repository intentionally does not contain:
 - device serial numbers
 - raw captures containing unnecessary vendor assets
 
-The current public code is limited to commands observed in the official software and the static-image path we have directly validated.
+The current public code is limited to commands observed in the official software and the static-image path directly validated during this work.
 
 ## Next work
 
+- rerun the cleaned public refactor end-to-end;
 - reproduce the live diagnostics/layout path;
 - feed CPU and GPU telemetry from Linux;
 - support multi-GPU temperatures;
