@@ -11,8 +11,6 @@ These notes describe behavior observed from Phanteks NexLinq traffic, recovered 
 - HID usage page observed: `0xff1b`
 - HID usage observed: `0x91`
 
-The confirmed static-image and native telemetry paths use HID.
-
 ## Confirmed commands
 
 ### `0x22` — device information
@@ -42,8 +40,6 @@ Validated Linux static-image configuration:
 | 15 | flags | `0x00` |
 | 16-19 | ARGB fallback | `ff 00 00 00` |
 
-The device returns the expected 512-byte response. The working Linux sequence waits about 120 ms before the first JPEG packet.
-
 ### `0x28` — JPEG transfer
 
 | Offset | Meaning |
@@ -60,8 +56,6 @@ Each page is acknowledged before the next page is sent.
 
 ### `0x30` — apply / commit / widget configuration
 
-`0x30` is used for multiple layout/configuration operations.
-
 Working static-image activation begins:
 
 ```text
@@ -74,7 +68,7 @@ An earlier failed reconstruction used:
 01 30 00 01 00 00 ...
 ```
 
-For native sensor widgets, the request state at report offset 11 is `0x02`.
+For native sensor widgets, report offset 11 is widget type `0x02`.
 
 Validated graph styles:
 
@@ -82,8 +76,6 @@ Validated graph styles:
 0x03 = line
 0x02 = bar
 ```
-
-Validated private Linux implementation currently permits widget intervals of 1 or 10 seconds. NexLinq UI/source also contains other frequency values, but they are not exposed by the cleaned public builder until directly validated.
 
 ## Source-confirmed `0x30` sensor-widget structure
 
@@ -101,53 +93,70 @@ NexLinq `SetLcdInfo` builds this common report header:
 
 For sensor widget type `0x02`:
 
-| Widget payload offset | Report offset | Meaning |
+| Widget payload | Report | Meaning |
 |---:|---:|---|
 | 0 | 11 | widget type `0x02` |
 | 1 | 12 | widget mode/style |
 | 2 | 13 | position |
 | 3-5 | 14-16 | source selectors 1-3 |
-| 6-11 | 17-22 | three u16 BE source-specific maximum values |
+| 6-11 | 17-22 | three u16 BE source-specific maxima |
 | 12-13 | 23-24 | alarm temperature/RPM |
 | 14 | 25 | alarm enable where applicable |
 | 15 | 26 | frequency |
 | 16 | 27 | text1 length |
-| 17-48 | 28-59 | text1, max 32 bytes |
+| 17-48 | 28-59 | text1 |
 | 49 | 60 | text2 length |
 | 50-81 | 61-92 | text2 |
 | 82 | 93 | text3 length |
 | 83-114 | 94-125 | text3 |
-| 125-148 | 136-159 | colors 1-6, ARGB |
-| 165+ | 176+ | mode-derived bright colors |
-
-The physically validated CPU-temperature line/1-second request starts:
-
-```text
-01 30 00 01 00 01 00 00 00 00 00
-02 03 02 01 01 01 ...
-```
-
-with label `AMD Ryzen 9 9950X`.
 
 ### Source-specific maximum values
 
-Decompiled NexLinq `getMaxValue()` confirms the three u16 BE maximum fields are derived by selected source:
+Installed vendor code confirms:
 
-- fan selectors `7-26` -> configured max RPM;
-- `28` -> CPU max clock;
-- `29` -> CPU max power;
-- `31` -> GPU 1 max clock;
-- `32` -> GPU 1 max power;
-- `42` -> packed RAM total;
-- `43-44` -> constant display scale `1200`.
+```text
+fan 7-26 -> configured max RPM
+28       -> CPU ClockMax
+29       -> CPU PowerMax
+31       -> GPU 1 ClockMax
+32       -> GPU 1 PowerMax
+42       -> packed RAM total
+43-44    -> constant 1200 display scale
+```
 
-Direct-value selectors such as CPU utilization (`27`), GPU utilization (`30`), and NVMe temperature (`46`) do not require one of these maxima for the validated line-widget behavior.
+Physically validated examples:
 
-The GPU-clock physical test used `2115` MHz in all three maximum fields at report offsets `17-22`.
+```text
+28 CPU clock: 5756 MHz
+31 GPU clock: 2115 MHz
+32 GPU power: 390 W
+42 RAM used:  0x3c56 on 60.34 GiB OS-visible RAM
+```
+
+### RAM selector 42 maximum
+
+The selector-42 maximum is intentionally unusual.
+
+Direct IL inspection of the installed vendor `LibPhanteks.dll` showed that LCD6-HD, LCD7-HD, and LCD10-HD all use the same rule in `getMaxValue()` for source `42` and for all three source slots:
+
+```text
+whole = getRamGB(hwRam.TotalSize)[0]
+max = (whole << 8) | 0x56
+```
+
+The low byte is a literal `0x56` / decimal `86`; it is not `getRamGB(...)[1]` and is not a decompiler artifact.
+
+On the validation host:
+
+```text
+RAM total:             60.34 GiB
+0x21 RAM-total bytes:  3c 22
+0x30 selector-42 max:  3c 56
+```
+
+So the normal telemetry path uses the real whole/hundredths bytes, while the widget maximum uses the vendor-specific literal low byte.
 
 ## Recovered source selectors
-
-The embedded NexLinq WebView resources were extracted from the installed executable and inspected offline. Menu construction plus `getSourceValue()` / `getSourceName()` establish:
 
 | ID | Meaning / status |
 |---:|---|
@@ -160,7 +169,7 @@ The embedded NexLinq WebView resources were extracted from the installed executa
 | 30 | GPU 1 load |
 | 31 | GPU 1 clock speed |
 | 32 | GPU 1 power |
-| 33-41 | GPU-associated internally, but not assigned/exposed by the recovered NexLinq UI |
+| 33-41 | GPU-associated internally, not assigned/exposed by recovered NexLinq UI |
 | 42 | RAM used |
 | 43 | PSU Power Out |
 | 44 | PSU Power In |
@@ -168,23 +177,7 @@ The embedded NexLinq WebView resources were extracted from the installed executa
 | 46-50 | NVMe temperatures |
 | 51-55 | SATA temperatures |
 
-The recovered menu currently creates first-GPU entries for selector `2`, `30`, `31`, and `32`.
-
-IDs `33-41` were searched across all extracted NexLinq JavaScript. No selector menu entry, parameter, or source assignment was found. Decompiled C# `getMaxValue()` also provides no selector-specific handling for them. They remain intentionally unresolved.
-
-## Line-widget footer/history semantics
-
-Physical GPU-clock testing exposed behavior that was easy to miss when values were flat. In the validated line widget, the three bottom statistics behave as:
-
-```text
-left    = minimum of recent history
-middle  = maximum of recent history
-right   = current value
-```
-
-When GPU clock changed from a retained ~1.93 GHz value to a newly transmitted 210 MHz value, the right/current field changed first, the left/minimum followed extremely quickly, and the middle/maximum remained at ~1.93 GHz until the older high sample aged out roughly 15+ seconds later. It then fell to 210 MHz.
-
-This matches the recovered NexLinq preview logic, which maintains a rolling `tempData` history and derives `min`, `max`, and `cur` separately. The firmware's exact internal implementation is not claimed to be identical to the JavaScript preview, but the physical behavior agrees with those semantics.
+IDs `33-41` remain intentionally unresolved.
 
 ## `0x21` — SetHandshakeData telemetry
 
@@ -209,8 +202,8 @@ NexLinq normally sends a 123-byte payload. Payload begins at report offset 11 an
 | 91-92 | u16 BE | CPU maximum clock |
 | 93-94 | u16 BE | CPU maximum power |
 | 95-112 | 5× 6-byte groups | GPU max clock, max power, total VRAM |
-| 113-117 | 5× u8 | deduplicated NVMe temperatures |
-| 118-122 | 5× u8 | deduplicated SATA temperatures |
+| 113-117 | 5× u8 | NVMe temperatures |
+| 118-122 | 5× u8 | SATA temperatures |
 
 Current GPU group at `61 + i*7`:
 
@@ -231,11 +224,38 @@ Maximum GPU group at `95 + i*6`:
 
 NexLinq rounds GPU numeric values before u16 encoding.
 
-RAM is encoded as one byte for whole GiB plus one byte for the two-digit decimal portion.
+RAM telemetry is encoded as one byte for whole GiB plus one byte for the two-digit decimal portion.
 
-## Linux full-payload population — physically validated
+## Physically validated native selectors
 
-On September 4, 2026 Linux populated the source-confirmed trailing fields with real telemetry instead of leaving offsets 56-122 zero.
+| Selector | Metric | Physical result |
+|---:|---|---|
+| 1 | CPU temperature | native line widget and live graph confirmed |
+| 27 | CPU utilization | controlled load and integer rounding confirmed |
+| 28 | CPU clock | 4373.353 MHz same sample displayed as 4.37 GHz |
+| 30 | GPU 1 utilization | exact same-sample 71% collector/display correlation |
+| 31 | GPU 1 clock | retained ~1.93 GHz -> fresh 210 MHz with 2115 MHz maximum |
+| 32 | GPU 1 power | 9.46 W sample encoded/displayed as 9 W with 390 W maximum |
+| 42 | RAM used | retained 3.34 GiB -> fresh ~3.47 GiB using `0x3c56` max |
+| 46 | NVMe 1 temperature | 45.85 °C encoded/displayed as 46 °C |
+
+## Line-widget footer/history semantics
+
+Physical testing establishes:
+
+```text
+left   = minimum of rolling visible history
+middle = maximum of rolling visible history
+right  = current value
+```
+
+Current updates first. Old min/max samples remain until they age out of the rolling graph history. During CPU-clock and GPU-power testing, the old history value disappeared only after the graph had advanced across the full visible plotting width.
+
+This agrees with recovered NexLinq preview logic that maintains a rolling data array and derives min/max/current separately. The firmware's internal algorithm is not claimed to be byte-for-byte identical to the JavaScript preview.
+
+For selector `32`, only the right/current footer value displayed the `W` suffix; left/minimum and middle/maximum were unitless.
+
+## Linux full-payload sources
 
 Verified Linux sources include:
 
@@ -248,66 +268,22 @@ Verified Linux sources include:
 - RAM used/total from `/proc/meminfo`;
 - NVMe temperature from hwmon.
 
-A representative RTX 3090 reported:
+For the RTX 3090:
 
 ```text
-current clock 210 MHz
-max clock     2115 MHz
-power draw    about 9-10 W idle
-power.limit   370 W
+power.limit     370 W
 power.max_limit 390 W
-VRAM          15 / 24576 MiB
 ```
 
-`PowerMax` maps to `power.max_limit` (390 W in this test), not the current software `power.limit` (370 W).
+`PowerMax` maps to `power.max_limit`.
 
-No verified Linux CPU-power or PSU telemetry source was present on the validation machine. Therefore these fields remain zero by design:
+No verified Linux CPU-power or PSU telemetry source is present on the validation machine. Those payload fields remain zero by design.
 
-```text
-59-60 CPU power
-84-85 PSU output
-86-87 PSU input
-88    PSU efficiency
-93-94 CPU max power
-```
+## Fan-selector boundary
 
-The expanded 123-byte packet received a matching 512-byte acknowledgement and the existing native CPU graph visibly advanced by one sample.
+Selectors `7-26` are source-confirmed as fan RPM inputs. The NexLinq LCD6-HD UI permits configured fan maxima from `500` to `4000` RPM in `100` RPM steps, default `2000`.
 
-## Physically validated native selectors
-
-The cleaned public native builder is intentionally allowlisted to selectors physically exercised from Linux:
-
-| Selector | Metric | Physical result |
-|---:|---|---|
-| 1 | CPU temperature | native line widget and live graph confirmed |
-| 27 | CPU utilization | idle ~0.616% encoded/displayed as 1%; controlled 8-of-32-thread load produced 26% |
-| 30 | GPU 1 utilization | idle 0%; controlled `glmark2` load produced an exact same-sample 71% collector/display correlation |
-| 31 | GPU 1 clock | retained ~1.93 GHz value switched to fresh 210 MHz; 2115 MHz maximum supplied in `0x30` |
-| 46 | NVMe 1 temperature | measured 45.85 °C encoded/displayed as 46 °C |
-
-For the CPU-utilization load test, the synthetic workload was designed to add roughly 25 percentage points of total utilization on 32 logical CPUs. The machine had existing fractional utilization (~0.616% in an adjacent idle sample), and NexLinq-compatible u8 encoding rounds the measured value. The resulting 26% display is therefore consistent with the measurement/rounding chain and should not be dismissed as arbitrary background noise.
-
-## Confirmed static sequence
-
-```text
-open HID session
- -> 0x22 verify
- -> 0x2A configure
- -> wait ~120 ms
- -> acknowledged 0x28 JPEG pages
- -> wait ~100 ms
- -> 0x30 apply with 01 30 00 01 00 01 ...
- -> require success response
-close session
-```
-
-## Persistence finding
-
-The static JPEG survives complete power loss. Live telemetry should therefore use native `0x21` reports plus native `0x30` widget configuration, not repeated JPEG uploads.
-
-Native widgets also retain the last layout/value after host updates stop. A frozen visible graph is not proof that fresh telemetry is arriving.
-
-Changing only the `0x30` selector can immediately expose a value already retained from the most recent full `0x21` telemetry packet; this was observed during selector 46 and 31 validation.
+The next physical batch is selectors `7-11`, corresponding in the current Linux packet to top, rear, pump, side, and bottom RPM values. GPU fan percentage from `nvidia-smi` is not treated as physical RPM and is not mapped into these slots.
 
 ## Publication boundary
 

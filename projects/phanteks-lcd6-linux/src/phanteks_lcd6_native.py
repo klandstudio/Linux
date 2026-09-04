@@ -5,8 +5,8 @@ Derived from traffic produced by the official NexLinq application and validated
 against a real LCD6-HD on firmware V1.0.0.10. This module intentionally keeps
 unknown/unavailable telemetry fields zero rather than inventing values.
 
-The existing sibling module ``phanteks_lcd6.py`` provides HID discovery,
-open/write/read helpers, and the validated static-JPEG transport.
+The sibling module ``phanteks_lcd6.py`` provides HID discovery, open/write/read
+helpers, and the validated static-JPEG transport.
 """
 
 from __future__ import annotations
@@ -26,15 +26,22 @@ SET_HANDSHAKE_DATA = 0x21
 TELEMETRY_SHORT_PAYLOAD_SIZE = 56
 TELEMETRY_FULL_PAYLOAD_SIZE = 123
 
-# These selectors have each been physically exercised as separate native
-# widgets from Linux. This is deliberately an allowlist, not a numeric range.
+# Deliberately an allowlist: every selector below has been physically exercised
+# as a separate native widget from Linux.
 PHYSICALLY_VALIDATED_NATIVE_SELECTORS = {
     1: "CPU temperature",
     27: "CPU utilization",
+    28: "CPU clock",
     30: "GPU 1 utilization",
     31: "GPU 1 clock",
+    32: "GPU 1 power",
+    42: "RAM used",
     46: "NVMe 1 temperature",
 }
+
+# These selectors use the source-specific u16 BE maximum fields at report
+# offsets 17..22 and therefore require a nonzero max_value.
+MAX_REQUIRED_NATIVE_SELECTORS = {28, 31, 32, 42}
 
 
 def _u8(value) -> int:
@@ -51,7 +58,7 @@ def _u16(value) -> bytes:
 
 
 def _ram_gib(value) -> bytes:
-    """Encode NexLinq's [whole GiB, hundredths] representation."""
+    """Encode NexLinq's [whole GiB, hundredths] 0x21 representation."""
     if value is None:
         return b"\x00\x00"
     rounded = round(float(value) + 1e-9, 2)
@@ -61,6 +68,21 @@ def _ram_gib(value) -> bytes:
         whole += 1
         hundredths = 0
     return bytes((max(0, min(255, whole)), max(0, min(99, hundredths))))
+
+
+def ram_widget_max_from_total_gib(total_gib) -> int:
+    """Build NexLinq's physically validated selector-42 0x30 maximum.
+
+    The installed vendor DLLs for LCD6-HD, LCD7-HD, and LCD10-HD all use the
+    same rule for RAM selector 42: high byte = whole GiB; low byte = literal
+    0x56 (decimal 86). This is distinct from the real hundredths byte sent in
+    the 0x21 RAM-total field.
+    """
+    if total_gib is None:
+        raise ValueError("total_gib is required")
+    whole = int(round(float(total_gib) + 1e-9, 2))
+    whole = max(0, min(255, whole))
+    return (whole << 8) | 0x56
 
 
 def _field(obj, name):
@@ -90,9 +112,8 @@ def build_telemetry_report(
     util_pct, clock_mhz, power_w, mem_used_mib, clock_max_mhz, power_max_w,
     and mem_total_mib.
 
-    CPU power, CPU max power, and PSU fields are deliberately left zero by
-    this cleaned public implementation because the validation workstation did
-    not expose a verified Linux telemetry source for them.
+    CPU power, CPU max power, and PSU fields are deliberately left zero because
+    the validation workstation did not expose a verified Linux telemetry source.
     """
     payload_size = (
         TELEMETRY_FULL_PAYLOAD_SIZE if full else TELEMETRY_SHORT_PAYLOAD_SIZE
@@ -176,13 +197,9 @@ def build_native_widget_report(
 ):
     """Build an allowlisted, physically validated native sensor-widget report.
 
-    ``source_id`` is intentionally restricted to selectors physically exercised
-    from Linux. ``max_value`` maps to all three source-specific u16 BE maximum
-    fields at report offsets 17..22. Direct-value sources use zero. GPU clock
-    selector 31 requires its source-specific maximum clock in MHz.
-
-    The line/1-second form is physically validated. Bar mode and the allowed
-    interval values remain capture/source-confirmed unless separately noted.
+    ``source_id`` is restricted to selectors physically exercised from Linux.
+    ``max_value`` maps to all three source-specific u16 BE maximum fields at
+    report offsets 17..22.
     """
     styles = {"bar": 0x02, "line": 0x03}
     if graph_style not in styles:
@@ -196,8 +213,10 @@ def build_native_widget_report(
         )
 
     max_value = max(0, min(0xFFFF, int(max_value)))
-    if source_id == 31 and max_value == 0:
-        raise ValueError("GPU clock selector 31 requires max_value in MHz")
+    if source_id in MAX_REQUIRED_NATIVE_SELECTORS and max_value == 0:
+        raise ValueError(
+            f"selector {source_id} requires a nonzero source-specific max_value"
+        )
 
     report = bytearray(REPORT_OUT)
     report[0:17] = bytes(
