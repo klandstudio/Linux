@@ -41,7 +41,8 @@ PHYSICALLY_VALIDATED_NATIVE_SELECTORS = {
     31: "GPU 1 clock",
     32: "GPU 1 power",
     42: "RAM used",
-    46: "NVMe 1 temperature",
+    46: "NVMe 0 temperature",
+    47: "NVMe 1 temperature",
 }
 
 # These selectors use the source-specific u16 BE maximum fields at report
