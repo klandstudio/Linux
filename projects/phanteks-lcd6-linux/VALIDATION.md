@@ -93,7 +93,7 @@ GPU0 util sample: 71.0%
 
 The LCD displayed `71`.
 
-## Selector 46 — NVMe 1 temperature
+## Selector 46 — NVMe 0 temperature
 
 Physically validated.
 
@@ -104,6 +104,38 @@ LCD: 46
 ```
 
 Changing only the `0x30` selector exposed the already-retained NVMe value without an immediate new `0x21` send.
+
+## Selector 47 — NVMe 1 temperature
+
+Date: 2026-09-04
+
+Physically validated as the second NVMe field.
+
+The Linux hwmon mapping was confirmed as:
+
+```text
+hwmon1 -> nvme0 -> Samsung SSD 990 PRO 2TB
+hwmon2 -> nvme1 -> UMIS RPJTJ128MKP1MDY
+```
+
+An offline packet check produced:
+
+```text
+NVMe temperatures: [37.85, 32.85]
+0x21 NVMe bytes:    [38, 33, 0, 0, 0]
+selector 47 max:    0
+```
+
+The native widget then transitioned:
+
+```text
+0 -> 33 °C
+later -> 34 °C
+```
+
+Continuous `0x21` reports returned 512-byte acknowledgements and the run stopped cleanly.
+
+Conclusion: selector `47` is physically validated as Linux/project `NVMe 1`, the second NVMe temperature field. The exact physical M.2 slot of that UMIS device remains M2_3 or M2_4 and is intentionally not inferred from PCI enumeration.
 
 ## Selector 31 — GPU 1 clock
 
@@ -291,6 +323,85 @@ Conclusion: max-dependent `native-live` is physically validated end-to-end for s
 
 The post-stop behavior also refines the persistence model: stopping host telemetry freezes the retained current value, but does not necessarily freeze rolling-history aging. Physical testing does not establish whether firmware advances the history by repeating the retained current sample or by another internal mechanism.
 
+## Source-confirmed widget labels
+
+Date: 2026-09-04
+
+Recovered NexLinq serialization confirms the sensor-widget text fields:
+
+```text
+payload[16]    = text1 length
+payload[17:49] = text1 bytes
+payload[49]    = text2 length
+payload[50:82] = text2 bytes
+payload[82]    = text3 length
+payload[83:115]= text3 bytes
+```
+
+The Linux builder was generalized so text1 can be supplied as a caller-selected ASCII label instead of retaining the captured CPU model string.
+
+For compact local layouts the chosen naming convention is:
+
+```text
+CPU
+GPU0 / GPU1
+HD0 / HD1
+```
+
+Important boundary: during the first three-panel physical run, the trailing numeric identifier in the longer GPU/NVMe labels was not separately legible; one apparent `1` was actually a vertical divider. Therefore text-field serialization is source-confirmed and configurable, but compact suffix legibility is not claimed as physically validated yet.
+
+## Multiple simultaneous native widgets — confirmed
+
+Date: 2026-09-04
+
+Recovered NexLinq `SetLcdInfo` code establishes that for a nonzero layout index it sends one `0x30` report per `PhLcdItem`, with:
+
+```text
+report[3]   = lcd.lcds.Count
+report[4]   = phLcdItem.index
+report[5]   = layoutIndex
+report[6:9] = loop iteration i as 24-bit BE
+report[11+] = widget payload
+```
+
+NexLinq waits 50 ms between item reports.
+
+Recovered LCD6-HD layout resources and `getLcdSize()` show that the smallest stock multi-item layouts contain three items. The first validation used stock horizontal `layoutIndex=10`, whose item indices are `0`, `1`, and `2`.
+
+The Linux test constructed three separate sensor-widget reports:
+
+```text
+header item 0: [1,48,0,3,0,10,0,0,0] source 1
+header item 1: [1,48,0,3,1,10,0,0,1] source 32
+header item 2: [1,48,0,3,2,10,0,0,2] source 47
+```
+
+The configured metrics were:
+
+```text
+item 0: CPU temperature
+item 1: GPU0 power, 390 W maximum
+item 2: NVMe 1 / second NVMe temperature
+```
+
+All three `0x30` reports returned 512-byte acknowledgements:
+
+```text
+[512, 512, 512]
+```
+
+The subsequent live run produced 512-byte `0x21` acknowledgements on all 15 cycles. Same-run source/display correlation included:
+
+```text
+CPU 47.75 C   -> LCD 48 C
+GPU0 11.86 W  -> LCD 12 W
+NVMe1 33.85 C -> LCD 34 C
+```
+
+Physical result: three distinct native sensor regions appeared simultaneously and updated from the same full `0x21` telemetry stream.
+
+Conclusion: **multiple simultaneous native widgets are physically validated** on LCD6-HD using stock layout 10 and the vendor-confirmed per-item `0x30` serialization sequence.
+
 ## Line-widget history semantics — refined physical result
 
 Across GPU clock, RAM used, CPU clock, GPU power, and the later continuous GPU-power `native-live` run, the footer behaves as:
@@ -324,13 +435,14 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 31  GPU 1 clock
 32  GPU 1 power
 42  RAM used
-46  NVMe 1 temperature
+46  NVMe 0 temperature
+47  NVMe 1 temperature
 ```
 
 ### Source-confirmed but not yet physically exercised as separate widgets
 
 - fan selectors `12-26`, only when actual mapped RPM sources exist;
-- additional NVMe/SATA selectors `47-55`;
+- additional NVMe selectors `48-50` and SATA selectors `51-55`;
 - PSU selectors `43-45` (local live telemetry unavailable).
 
 ### Intentionally unresolved / unavailable
@@ -339,19 +451,19 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 - live CPU power selector `29` until a verified Linux source exists;
 - live PSU output/input/efficiency on the validation host;
 - GPU fan percentage as a substitute for physical RPM;
-- multiple simultaneous native widgets;
+- additional native layout families beyond the first validated three-item layout;
 - generalized placement/color/alarm behavior;
+- compact numeric suffix legibility in small panels;
 - second RTX 3090 native-widget behavior.
 
 ## Next validation targets
 
-With automatic max-dependent `native-live` now physically validated, next work is limited to sources/features that add new information rather than repeating already-proven plumbing:
+With automatic maxima, selector 47, configurable text1 serialization, and a three-item native layout now established, next work should add new information rather than repeat already-proven plumbing:
 
 - additional NVMe/SATA selectors when real local telemetry exists;
 - remaining fan selectors only when a genuine mapped tachometer RPM source is available;
-- device-name / label generalization;
-- multiple simultaneous native widgets;
-- placement, sizing, colors, and alarm behavior;
+- additional stock layout families and final dashboard composition;
+- compact-label legibility, placement, sizing, colors, and alarm behavior;
 - second RTX 3090 behavior after GPU-B is installed;
 - service/autostart packaging.
 
