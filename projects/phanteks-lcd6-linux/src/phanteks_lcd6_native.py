@@ -30,6 +30,11 @@ TELEMETRY_FULL_PAYLOAD_SIZE = 123
 # as a separate native widget from Linux.
 PHYSICALLY_VALIDATED_NATIVE_SELECTORS = {
     1: "CPU temperature",
+    7: "top radiator fan RPM",
+    8: "rear fan RPM",
+    9: "AIO pump RPM",
+    10: "side fan RPM",
+    11: "bottom fan RPM",
     27: "CPU utilization",
     28: "CPU clock",
     30: "GPU 1 utilization",
@@ -40,8 +45,9 @@ PHYSICALLY_VALIDATED_NATIVE_SELECTORS = {
 }
 
 # These selectors use the source-specific u16 BE maximum fields at report
-# offsets 17..22 and therefore require a nonzero max_value.
-MAX_REQUIRED_NATIVE_SELECTORS = {28, 31, 32, 42}
+# offsets 17..22 and therefore require a nonzero max_value. Fan selectors 7-11
+# were physically validated with the vendor-valid 4000 RPM maximum.
+MAX_REQUIRED_NATIVE_SELECTORS = {7, 8, 9, 10, 11, 28, 31, 32, 42}
 
 
 def _u8(value) -> int:

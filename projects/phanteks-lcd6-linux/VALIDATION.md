@@ -206,6 +206,33 @@ Only the right/current footer value displayed the `W` unit suffix; left/minimum 
 
 Conclusion: selector `32` and `PowerMax = power.max_limit = 390 W` are physically validated.
 
+## Selectors 7-11 — first physical fan batch
+
+Date: 2026-09-04
+
+The first five fan slots populated by the Linux `0x21` packet were tested individually as native line widgets. Each widget used the vendor-valid configured maximum:
+
+```text
+max_value = 4000 RPM
+0x30 max bytes = 0f a0 0f a0 0f a0
+```
+
+The observed LCD transition for each selector was `0 -> value`, after which all three footer values matched because only the fresh sample was present in the new graph history:
+
+| Selector | Mapped source | LCD result |
+|---:|---|---:|
+| 7 | top radiator fans | `0 -> 717 x3` |
+| 8 | rear fans | `0 -> 693 x3` |
+| 9 | AIO pump | `0 -> 3125 x3` |
+| 10 | side fans | `0 -> 539 x3` |
+| 11 | bottom fans | `0 -> 498 x3` |
+
+The ordering and characteristic RPM ranges match the established first-five fan-slot mapping in the full Linux packet, with selector `9` especially distinguished by the ~3100 RPM pump speed.
+
+Conclusion: selectors `7-11` are physically validated as the workstation's top, rear, pump, side, and bottom RPM sources. The public builder therefore allowlists these five selectors and requires a nonzero source-specific maximum for them.
+
+GPU fan percentage from `nvidia-smi` remains excluded because percentage is not physical tachometer RPM.
+
 ## Line-widget history semantics — refined physical result
 
 Across GPU clock, RAM used, CPU clock, and GPU power testing, the footer behaves as:
@@ -226,6 +253,11 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 
 ```text
 1   CPU temperature
+7   top radiator fan RPM
+8   rear fan RPM
+9   AIO pump RPM
+10  side fan RPM
+11  bottom fan RPM
 27  CPU utilization
 28  CPU clock
 30  GPU 1 utilization
@@ -237,7 +269,7 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 
 ### Source-confirmed but not yet physically exercised as separate widgets
 
-- fan selectors `7-26` with configured max RPM;
+- fan selectors `12-26`, only when actual mapped RPM sources exist;
 - additional NVMe/SATA selectors `47-55`;
 - PSU selectors `43-45` (local live telemetry unavailable).
 
@@ -246,22 +278,18 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 - selector IDs `33-41`;
 - live CPU power selector `29` until a verified Linux source exists;
 - live PSU output/input/efficiency on the validation host;
+- GPU fan percentage as a substitute for physical RPM;
 - multiple simultaneous native widgets;
 - generalized placement/color/alarm behavior;
 - second RTX 3090 native-widget behavior.
 
-## Next validation target
+## Next validation targets
 
-Validate the five fan slots already populated by the Linux packet as selectors `7-11`:
+With selectors `7-11` complete, next work is limited to sources for which real telemetry exists:
 
-```text
-7  top radiator fans
-8  rear fans
-9  AIO pump
-10 side fans
-11 bottom fans
-```
+- additional NVMe/SATA selectors;
+- remaining fan selectors only when a genuine mapped tachometer RPM source is available;
+- automatic selector-to-max derivation;
+- `native-live` support for max-dependent selectors.
 
-NexLinq's LCD6-HD editor permits configured fan maxima from `500` to `4000` RPM in `100` RPM steps; `4000` is therefore a vendor-valid ceiling for the first validation batch, including the ~3116 RPM pump.
-
-GPU fan percentage from `nvidia-smi` is not physical RPM and must not be presented as such.
+CPU power selector `29` and PSU selectors `43-45` remain out of live testing until verified local telemetry sources exist.

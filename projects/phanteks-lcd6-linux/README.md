@@ -58,6 +58,11 @@ The public native widget builder is conservatively allowlisted to selectors that
 | ID | Metric | Validation |
 |---:|---|---|
 | 1 | CPU temperature | native line graph and live updates |
+| 7 | top radiator fan RPM | `0 -> 717 x3`, max 4000 RPM |
+| 8 | rear fan RPM | `0 -> 693 x3`, max 4000 RPM |
+| 9 | AIO pump RPM | `0 -> 3125 x3`, max 4000 RPM |
+| 10 | side fan RPM | `0 -> 539 x3`, max 4000 RPM |
+| 11 | bottom fan RPM | `0 -> 498 x3`, max 4000 RPM |
 | 27 | CPU utilization | idle rounding and controlled ~25-point load validated |
 | 28 | CPU clock | exact same-sample 4373.353 MHz -> 4.37 GHz display |
 | 30 | GPU 1 utilization | controlled off-screen GPU load; exact same-sample 71% correlation |
@@ -85,6 +90,7 @@ fan 7-26 -> configured max RPM
 Physically validated examples:
 
 ```text
+selectors 7-11 fan RPM: 4000 RPM
 selector 28 CPU clock: 5756 MHz
 selector 31 GPU clock: 2115 MHz
 selector 32 GPU power: 390 W
@@ -218,15 +224,17 @@ Published code is limited to derived interoperability facts and paths that have 
 
 ## Next work
 
-- physically validate the first five mapped fan selectors `7-11` using vendor-valid configured max RPM values;
+- additional NVMe/SATA selectors;
+- remaining fan selectors only when genuine mapped tachometer RPM sources exist;
 - automatic selector-to-max derivation in the private Linux pipeline;
 - fix/extend `native-live` for max-dependent selectors;
-- additional NVMe/SATA selectors;
 - device-name / label generalization;
 - multiple simultaneous native widgets;
 - placement, sizing, colors, and alarm behavior;
 - second RTX 3090 behavior after GPU-B is installed;
 - service/autostart packaging.
+
+GPU fan percentage from `nvidia-smi` is not physical RPM and is not mapped into native fan selectors.
 
 CPU power selector `29` and PSU selectors `43-45` remain out of live testing until verified local telemetry sources exist.
 
