@@ -1,0 +1,148 @@
+--- ENE_RAM.js
++++ ENE_RAM.js
+@@ -42,6 +42,8 @@
+ shutdownColor:readonly
+ LightingMode:readonly
+ forcedColor:readonly
++persistentStaticColor:readonly
++writePersistentStatic:readonly
+ */
+ export function ControllableParameters() {
+ 	return [
+@@ -77,6 +79,26 @@
+ 			type: "color",
+ 			default: "#ff0000",
+ 		},
++		{
++			property: "persistentStaticColor",
++			group: "lighting",
++			label: "Persistent Static Color",
++			description:
++				"Color written to the ENE controller's internal static-effect storage when the one-shot save toggle is enabled",
++			min: "0",
++			max: "360",
++			type: "color",
++			default: "#00ff00",
++		},
++		{
++			property: "writePersistentStatic",
++			group: "lighting",
++			label: "Write Persistent Static (ONE SHOT)",
++			description:
++				"DANGEROUS SMBus write. Toggle ON once to write the selected static color to the DIMM. Toggle OFF before any later retry.",
++			type: "boolean",
++			default: "false",
++		},
+ 	];
+ }
+ 
+@@ -218,6 +240,19 @@
+ export function Shutdown(SystemSuspending) {
+ 	const color = SystemSuspending ? "#000000" : shutdownColor;
+ 	sendColors(color);
++}
++
++// One-shot user-triggered persistent save. SignalRGB calls this callback when
++// the matching user control changes. We only write when it becomes true.
++export function onwritePersistentStaticChanged() {
++	if (!writePersistentStatic) {
++		return;
++	}
++
++	device.log(
++		`USER REQUESTED ENE PERSISTENT STATIC SAVE: ${persistentStaticColor}`
++	);
++	ENE.SaveStaticColorPersistent(persistentStaticColor);
+ }
+ 
+ //TODO: find out if these take rgb data blocks like normal ENE Sticks.
+@@ -438,13 +473,18 @@
+ 			DeviceName: 0x1000,
+ 			ConfigTable: 0x1c00,
+ 			ManufacturerName: 0x1030,
+-			DirectMode: 0x8020, //Is this interchageable for ENE RAM?
++			DirectMode: 0x8020, // ENE direct/effect selection register
++			Mode: 0x8021,
++			Speed: 0x8022,
++			Direction: 0x8023,
+ 			SetChannelIdx: 0x80f8,
+ 			SetStickAddress: 0x80f9, //0x80 based. Let's see if they play ball.
+ 			ColorCtlV1: 0x8000,
+ 			ColorCtlV2: 0x8100,
+-			effectCtlV2: 0x8160,
++			EffectCtlV1: 0x8010,
++			EffectCtlV2: 0x8160,
+ 			ColorApply: 0x802f,
++			ModeApplyAndSave: 0x80a0,
+ 		};
+ 
+ 		this.XTREEMcommands = {
+@@ -483,6 +523,68 @@
+ 		} else {
+ 			this.Interface.WriteRegister(this.commands.DirectMode, 0x01);
+ 		}
++	}
++
++	SaveStaticColorPersistent(hexColor) {
++		if (this.config.XTREEM) {
++			device.log("Persistent save test is disabled for XTREEM RAM.");
++			return;
++		}
++
++		if (this.config.deviceProtocolVersion !== "V1" && this.config.deviceProtocolVersion !== "V2") {
++			device.log(
++				`Persistent save aborted: unsupported/unknown ENE protocol ${this.config.deviceProtocolVersion}`
++			);
++			return;
++		}
++
++		const Color = hexToRgb(hexColor);
++		const RGBData = [];
++
++		// ENE/OpenRGB byte order is R, B, G.
++		for (let i = 0; i < this.config.deviceLEDCount; i++) {
++			RGBData.push(Color[0], Color[2], Color[1]);
++		}
++
++		const effectStart =
++			this.config.deviceProtocolVersion === "V1"
++				? this.commands.EffectCtlV1
++				: this.commands.EffectCtlV2;
++
++		// Mirror OpenRGB SetAllColorsEffect(): write effect-color storage and apply.
++		let bytesWritten = 0;
++		while (bytesWritten < RGBData.length) {
++			const DataLength = Math.min(15, RGBData.length - bytesWritten);
++			const packet = RGBData.slice(bytesWritten, bytesWritten + DataLength);
++			this.Interface.WriteBlock(effectStart + bytesWritten, packet);
++			bytesWritten += DataLength;
++		}
++		this.Interface.WriteRegister(this.commands.ModeApplyAndSave, 0x01);
++		device.pause(100);
++
++		// Mirror OpenRGB Static mode: mode=1, speed=0, direction=0, then apply.
++		this.Interface.WriteRegister(this.commands.Mode, 0x01);
++		this.Interface.WriteRegister(this.commands.Speed, 0x00);
++		this.Interface.WriteRegister(this.commands.Direction, 0x00);
++		this.Interface.WriteRegister(this.commands.ModeApplyAndSave, 0x01);
++		device.pause(100);
++
++		// Select internal/effect mode and apply.
++		this.Interface.WriteRegister(this.commands.DirectMode, 0x00);
++		this.Interface.WriteRegister(this.commands.ModeApplyAndSave, 0x01);
++		device.pause(150);
++
++		// OpenRGB SaveMode(): ENE_REG_APPLY (0x80A0) <- 0xAA.
++		this.Interface.WriteRegister(this.commands.ModeApplyAndSave, 0xaa);
++		device.pause(500);
++
++		device.log(
++			`ENE persistent static save sent for ${hexColor}; restoring SignalRGB direct runtime mode.`
++		);
++
++		// Restore SignalRGB's normal direct runtime mode WITHOUT issuing another save.
++		this.Interface.WriteRegister(this.commands.DirectMode, 0x01);
++		this.Interface.WriteRegister(this.commands.ModeApplyAndSave, 0x01);
+ 	}
+ 
+ 	SendRGBData(RGBData) {
