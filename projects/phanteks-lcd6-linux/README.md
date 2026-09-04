@@ -38,33 +38,64 @@ The applied JPEG survives normal shutdown and complete AC-power removal, so repe
 
 ### Native live path
 
-Native widgets are now physically validated from Linux:
+Native widgets are physically validated from Linux:
 
 ```text
-0x30 configure native CPU sensor widget
+0x30 configure native sensor widget
 -> recurring 123-byte 0x21 SetHandshakeData reports
 -> 512-byte echo acknowledgements
--> visible graph updates
+-> visible graph/value updates
 ```
 
-A thirty-cycle `native-live` run visibly advanced the CPU-temperature graph several times. Stopping the sender leaves the last native layout/value visible; a frozen graph is therefore not evidence that telemetry is still arriving.
+The full Linux `0x21` implementation populates source-confirmed CPU/GPU/RAM/NVMe fields from real telemetry. Unsupported CPU/PSU power fields remain zero rather than being fabricated.
 
-On September 4, 2026 the Linux implementation was extended from a 123-byte packet with zero-filled trailing fields to a **source-confirmed, populated full telemetry packet**. The LCD accepted the expanded report and the native CPU graph advanced by one sample during the validation send.
+A frozen native widget is not evidence that host telemetry is still arriving: the LCD retains the last native layout/value after host updates stop.
 
-The currently populated Linux fields include:
+## Physically validated native selectors
 
-- CPU temperature, utilization, current clock, maximum clock;
-- up to five GPU temperatures;
-- fan RPM values;
-- GPU utilization, current/max clock, current power, used/total VRAM, maximum power;
-- RAM used/total;
-- NVMe temperature.
+The public native widget builder is now conservatively allowlisted to selectors that were physically exercised from Linux:
 
-CPU power, CPU maximum power, and PSU telemetry remain zero on the validation workstation because no verified Linux source was available. Missing telemetry is intentionally left zero rather than fabricated.
+| ID | Metric | Validation |
+|---:|---|---|
+| 1 | CPU temperature | native line graph and live updates |
+| 27 | CPU utilization | idle rounding and controlled ~25-point load validated |
+| 30 | GPU 1 utilization | controlled off-screen GPU load; exact same-sample 71% correlation |
+| 31 | GPU 1 clock | 2115 MHz maximum; retained ~1.93 GHz -> fresh 210 MHz transition |
+| 46 | NVMe 1 temperature | 45.85 °C source -> 46 °C display |
+
+The generalized builder does **not** expose arbitrary selector ranges.
+
+## `0x30` source-specific maxima
+
+NexLinq's recovered `getMaxValue()` logic confirms that report offsets `17-22` contain three u16 BE source-specific maxima. Relevant mappings include:
+
+```text
+fan 7-26 -> configured max RPM
+28       -> CPU max clock
+29       -> CPU max power
+31       -> GPU 1 max clock
+32       -> GPU 1 max power
+42       -> packed RAM total
+43-44    -> 1200 display scale
+```
+
+GPU clock selector `31` was physically validated using `2115` MHz in all three maximum fields.
+
+## Line-widget footer semantics
+
+GPU-clock testing exposed the footer behavior clearly. The three bottom values in the validated line widget behave as:
+
+```text
+left   = minimum of recent history
+middle = maximum of recent history
+right  = current value
+```
+
+When a fresh telemetry packet changed GPU clock from a retained ~1.93 GHz value to 210 MHz, the right/current field changed first, the left/minimum followed extremely quickly, and the middle/maximum remained at ~1.93 GHz until the older high sample aged out roughly 15+ seconds later.
 
 ## Recovered source selectors
 
-NexLinq's embedded WebView UI and .NET bridge now provide a defensible selector map:
+NexLinq's embedded WebView UI and .NET bridge provide a defensible selector map:
 
 | ID | Metric |
 |---:|---|
@@ -85,21 +116,37 @@ NexLinq's embedded WebView UI and .NET bridge now provide a defensible selector 
 | 46-50 | NVMe temperatures |
 | 51-55 | SATA temperatures |
 
-The recovered LCD6-HD menu currently creates GPU entries for source `2`, `30`, `31`, and `32` using the first GPU. IDs `33-41` are deliberately left unresolved rather than guessed.
+IDs `33-41` are deliberately left unresolved rather than guessed.
+
+## Full `0x21` telemetry
+
+The source-confirmed 123-byte payload includes:
+
+- CPU temperature, utilization, current/max clock;
+- up to five GPU temperatures;
+- 20 fan RPM fields;
+- GPU utilization, current/max clock, current/max power fields, used/total VRAM;
+- RAM used/total;
+- PSU output/input/efficiency fields;
+- NVMe/SATA temperatures.
+
+On the validation workstation, CPU current/max power and PSU fields remain zero because no verified Linux source is available.
+
+For the RTX 3090, NexLinq `PowerMax` maps to NVIDIA `power.max_limit` (390 W on the validation card), not the current software `power.limit` (370 W).
 
 ## Public code
 
 `src/phanteks_lcd6.py` contains the validated static-image transport.
 
-`src/phanteks_lcd6_native.py` contains the cleaned native-widget / telemetry implementation from the current milestone:
+`src/phanteks_lcd6_native.py` contains:
 
 - 56-byte and 123-byte `0x21` report builders;
 - source-confirmed full-payload encoding;
 - echo-ACK validation;
-- the physically validated CPU-temperature native widget `0x30` builder;
-- explicit zeroing of unsupported CPU/PSU power telemetry.
-
-The public native widget builder intentionally remains CPU-temperature-only. Generalizing selectors is the next milestone; arbitrary selector probing is not exposed.
+- an allowlisted generalized `0x30` native widget builder;
+- source-specific maximum-value fields;
+- backward-compatible CPU-temperature widget wrappers;
+- deliberate zeroing of unsupported CPU/PSU power telemetry.
 
 ## Quick start — static JPEG
 
@@ -151,8 +198,9 @@ Published code is limited to derived interoperability facts and paths that have 
 
 ## Next work
 
-- generalize the `0x30` native widget builder to known selector IDs without arbitrary probing;
-- validate CPU load, GPU load/power/clock, RAM, and NVMe native widgets one at a time;
+- resolve the unusual RAM-total packing used by `getMaxValue()` before physically testing selector `42`;
+- validate CPU clock `28` and GPU power `32` with their recovered maxima;
+- add fan widgets using configured maximum RPM values;
 - support multiple simultaneous native widgets and both RTX 3090s after the second GPU is installed;
 - recover placement, sizing, color, and alarm behavior without guessing undocumented fields;
 - add CPU/PSU power only if a real Linux telemetry source is found;
