@@ -201,12 +201,13 @@ def build_native_widget_report(
     interval_seconds=1,
     source_id=1,
     max_value=0,
+    label="CPU",
 ):
     """Build an allowlisted, physically validated native sensor-widget report.
 
     ``source_id`` is restricted to selectors physically exercised from Linux.
     ``max_value`` maps to all three source-specific u16 BE maximum fields at
-    report offsets 17..22.
+    report offsets 17..22. ``label`` maps to the source-confirmed text1 field.
     """
     styles = {"bar": 0x02, "line": 0x03}
     if graph_style not in styles:
@@ -252,33 +253,14 @@ def build_native_widget_report(
     report[21:23] = max_value.to_bytes(2, "big")
     report[26] = interval_seconds
 
-    # Preserve the capture-derived text payload while selector behavior is
-    # generalized independently. Device-name text is a separate future target.
-    label = b"AMD Ryzen 9 9950X"
-    report[27] = len(label)
-    report[28 : 28 + len(label)] = label
+    label_bytes = str(label).encode("ascii", errors="replace")[:32]
+    report[27] = len(label_bytes)
+    report[28 : 28 + len(label_bytes)] = label_bytes
     report[136:144] = b"\xff" * 8
     return report
 
 
-def send_native_widget_config(
-    fd,
-    *,
-    graph_style="line",
-    interval_seconds=1,
-    source_id=1,
-    max_value=0,
-):
-    """Send one allowlisted native widget config and require its 512-byte ACK."""
-    report = build_native_widget_report(
-        graph_style=graph_style,
-        interval_seconds=interval_seconds,
-        source_id=source_id,
-        max_value=max_value,
-    )
-    write_report(fd, report)
-    reply = wait_for_report(fd, ACTIVATE_LAYOUT)
-
+def _validate_native_widget_ack(report, reply):
     if len(reply) != REPORT_IN:
         raise RuntimeError(
             f"Unexpected 0x30 acknowledgement length: {len(reply)}/{REPORT_IN}"
@@ -296,7 +278,63 @@ def send_native_widget_config(
             "0x30 widget acknowledgement mismatch at byte(s): "
             + ", ".join(map(str, differences[:16]))
         )
+
+
+def send_native_widget_config(
+    fd,
+    *,
+    graph_style="line",
+    interval_seconds=1,
+    source_id=1,
+    max_value=0,
+    label="CPU",
+):
+    """Send one allowlisted native widget config and require its 512-byte ACK."""
+    report = build_native_widget_report(
+        graph_style=graph_style,
+        interval_seconds=interval_seconds,
+        source_id=source_id,
+        max_value=max_value,
+        label=label,
+    )
+    write_report(fd, report)
+    reply = wait_for_report(fd, ACTIVATE_LAYOUT)
+    _validate_native_widget_ack(report, reply)
     return reply
+
+
+def build_native_multi_widget_reports(items, *, layout_index=10):
+    """Build the physically validated three-item layout-10 0x30 sequence.
+
+    NexLinq serializes nonzero layouts as one 0x30 report per item. The first
+    public multi-widget path is intentionally limited to the hardware-tested
+    LCD6-HD layout 10 with item indices 0, 1, and 2.
+    """
+    items = list(items)
+    if layout_index != 10 or len(items) != 3:
+        raise ValueError("validated multi-widget path is layout 10 with 3 items")
+
+    reports = []
+    for i, item in enumerate(items):
+        report = build_native_widget_report(**item)
+        report[3] = 3
+        report[4] = i
+        report[5] = 10
+        report[6:9] = i.to_bytes(3, "big")
+        reports.append(report)
+    return reports
+
+
+def send_native_multi_widget_config(fd, items, *, layout_index=10):
+    """Send the validated three-report layout-10 sequence with 50 ms spacing."""
+    replies = []
+    for report in build_native_multi_widget_reports(items, layout_index=layout_index):
+        write_report(fd, report)
+        reply = wait_for_report(fd, ACTIVATE_LAYOUT)
+        _validate_native_widget_ack(report, reply)
+        replies.append(reply)
+        time.sleep(0.05)
+    return replies
 
 
 def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
@@ -306,6 +344,7 @@ def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
         interval_seconds=interval_seconds,
         source_id=1,
         max_value=0,
+        label="CPU",
     )
 
 
@@ -317,4 +356,5 @@ def send_native_cpu_widget_config(fd, *, graph_style="line", interval_seconds=1)
         interval_seconds=interval_seconds,
         source_id=1,
         max_value=0,
+        label="CPU",
     )
