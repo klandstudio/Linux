@@ -126,6 +126,48 @@ linux_0x21_full_123_no_visual.pcapng
 
 They are intentionally not committed because the public repository does not need large raw captures to document the validated behavior.
 
+## Native widget rendering and live updates — confirmed
+
+Date: 2026-09-04
+
+Linux reproduced a capture-verified `0x30` native sensor-widget configuration using line style and a one-second widget frequency:
+
+```text
+Sent one native widget 0x30 configuration to /dev/hidraw4;
+style=line, interval=1s, ACK length=512
+```
+
+Physical result: the LCD switched to a native CPU-temperature line graph labeled `AMD Ryzen 9 9950X`. The displayed value was approximately 35 C.
+
+Linux then sent one full 123-byte `0x21` telemetry report:
+
+```text
+CPU: 35.75 C
+GPU temps: [33.0]
+Fan RPMs [top,rear,pump,side,bottom]: [726, 668, 3125, 550, 473]
+Sent one 0x21 packet (123-byte full) to /dev/hidraw4; ACK length=512
+```
+
+The graph visibly changed after the packet.
+
+A subsequent `native-live` test configured the widget once and sent one full `0x21` report per second. It completed thirty cycles with 512-byte acknowledgements, and the graph visibly advanced several times. No repeated JPEG uploads or repeated `0x30` configuration occurred. Ctrl+C stopped the sender cleanly.
+
+The LCD continued displaying the graph after Ctrl+C. This does not mean telemetry continued: Windows NexLinq had previously left its last sensor diagnostic/value displayed after it stopped. The confirmed interpretation is that the device retains the last native layout/value while fresh graph updates depend on host `0x21` reports.
+
+The corresponding Linux `0x30` capture is retained privately as:
+
+```text
+linux_0x30_native_widget_line_1s.pcapng
+```
+
+## Offline schema recovery — source-confirmed
+
+Date: 2026-09-04
+
+The installed Windows NexLinq assemblies were inspected from a read-only NTFS mount. `LibPhanteks.Lcd6hdMaster.SetLcdInfo` confirmed the native `0x30` sensor-widget field layout, and `SetHandshakeData` confirmed all fields in the 123-byte `0x21` payload.
+
+This static analysis confirms field construction but does not replace physical validation. The public repository records the derived protocol map without redistributing vendor binaries or decompiled vendor source. Human-readable source-selector mappings and Linux population of the newly decoded telemetry fields remain pending.
+
 ## Current boundary
 
 Validated now:
@@ -134,13 +176,18 @@ Validated now:
 - static image retention across full power loss;
 - `0x21` 56-byte telemetry transport and echo acknowledgement;
 - `0x21` 123-byte telemetry transport and echo acknowledgement;
-- Linux fan ordering correlation for top/rear/pump/side/bottom.
+- Linux fan ordering correlation for top/rear/pump/side/bottom;
+- native line-widget configuration through `0x30`;
+- visible native CPU-temperature graph updates from Linux `0x21` telemetry;
+- clean stopping of host updates with retained last layout/value on the LCD;
+- static-source confirmation of the complete 123-byte telemetry schema.
 
 Not yet validated:
 
-- native widget/layout configuration sufficient to render Linux `0x21` values;
-- arbitrary native text, color, visibility, or blinking;
-- all fields in the 123-byte NexLinq telemetry payload;
+- human-readable mappings for every native sensor source-selector ID;
+- Linux collection/rendering of the newly decoded CPU utilization, clock, power, GPU, RAM, PSU, and disk fields;
+- multiple simultaneous native widgets or both RTX 3090s;
+- arbitrary native text, placement, color, visibility, or blinking;
 - all orientations/layouts or other firmware versions.
 
-The next protocol target is the exact Windows `0x30` widget/configuration transaction that binds native widgets to the live `0x21` data stream.
+The next target is recovering the source-selector mapping from NexLinq's packaged UI assets before adding more native metrics.
