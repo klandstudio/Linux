@@ -114,7 +114,54 @@ Other captured `0x30` observations:
 - widget frequency byte at offset 26: `0x01 = 1 sec`, `0x0A = 10 sec`, `0x3C = 60 sec`;
 - successful video application used request state byte `0x03` and received response status `0x01`.
 
-These observations are useful for reconstructing the native widget path, but the full widget layout structure is not yet considered decoded.
+### Source-confirmed sensor-widget structure
+
+Offline inspection of the installed NexLinq .NET assembly confirmed how `SetLcdInfo` builds an LCD6-HD sensor-widget report. This repository publishes the derived interoperability facts, not vendor source code.
+
+The common report header is:
+
+| Report offset | Meaning |
+| --- | --- |
+| 0 | report ID `0x01` |
+| 1 | command `0x30` |
+| 3 | total number of LCD items |
+| 4 | item index |
+| 5 | layout index |
+| 6-8 | zero-based item sequence, 24-bit big-endian |
+| 11+ | widget-specific payload |
+
+For hardware/sensor widget type `0x02`, the widget payload begins at report offset 11:
+
+| Payload offset | Report offset | Meaning |
+| --- | --- | --- |
+| 0 | 11 | widget type; `0x02` = sensor |
+| 1 | 12 | widget mode; validated `0x03` = line, `0x02` = bar |
+| 2 | 13 | position |
+| 3-5 | 14-16 | source selectors 1-3 |
+| 6-11 | 17-22 | three 16-bit big-endian maximum values |
+| 12-13 | 23-24 | alarm temperature or RPM, big-endian |
+| 14 | 25 | alarm enable for applicable modes/sources |
+| 15 | 26 | widget frequency |
+| 16 | 27 | text 1 length, maximum 32 |
+| 17-48 | 28-59 | text 1 |
+| 49 | 60 | text 2 length, maximum 32 |
+| 50-81 | 61-92 | text 2 |
+| 82 | 93 | text 3 length, maximum 32 |
+| 83-114 | 94-125 | text 3 |
+| 125-148 | 136-159 | colors 1-6, four-byte ARGB each |
+| 165+ | 176+ | mode-dependent derived bright colors |
+
+The Linux-validated line/one-second request begins:
+
+```text
+01 30 00 01 00 01 00 00 00 00 00 02 03 02 01 01 01 00
+00 00 00 00 00 00 00 00 01 11 41 4d 44 20 52 79 7a 65
+6e 20 39 20 39 39 35 30 58 ...
+```
+
+This selects sensor widget `2`, line mode `3`, position `2`, source selectors `1/1/1`, one-second frequency, and the 17-byte label `AMD Ryzen 9 9950X`.
+
+The source-selector numbers are not yet fully mapped to human-readable metrics. Do not probe arbitrary selector values merely because their storage offsets are known.
 
 ### `0x21` — telemetry / SetHandshakeData
 
@@ -130,7 +177,33 @@ A 56-byte payload form is understood well enough to populate basic sensors. The 
 | 11-15 | up to five GPU temperatures |
 | 16-55 | up to twenty fan RPM values, 2 bytes each, big-endian |
 
-The real NexLinq application normally sends a larger 123-byte (`0x007b`) payload. Linux now reproduces that packet shape as well. Bytes 56-122 are not yet decoded and were deliberately zero-filled during the first Linux test.
+The real NexLinq application normally sends a larger 123-byte (`0x007b`) payload. Linux reproduces that packet shape as well. The complete layout was later recovered by offline inspection of the installed NexLinq .NET assembly:
+
+| Payload offset | Encoding | Meaning |
+| --- | --- | --- |
+| 0-3 | u32 big-endian | timestamp |
+| 4 | u8 | UTC/state |
+| 10 | u8 | CPU temperature |
+| 11-15 | five u8 values | GPU temperatures 0-4 |
+| 16-55 | twenty u16 big-endian values | fan RPMs 0-19 |
+| 56 | u8 | CPU utilization |
+| 57-58 | u16 big-endian | CPU clock |
+| 59-60 | u16 big-endian | CPU power |
+| 61-81 | five seven-byte groups | GPU usage, clock, power, and used VRAM |
+| 82-83 | integer and two-digit fractional bytes | RAM used in GiB |
+| 84-85 | u16 big-endian | PSU output power |
+| 86-87 | u16 big-endian | PSU input power |
+| 88 | u8 | PSU efficiency |
+| 89-90 | integer and two-digit fractional bytes | RAM total in GiB |
+| 91-92 | u16 big-endian | CPU maximum clock |
+| 93-94 | u16 big-endian | CPU maximum power |
+| 95-112 | five six-byte groups | GPU max clock, max power, and total VRAM |
+| 113-117 | u8 values | deduplicated NVMe temperatures |
+| 118-122 | u8 values | deduplicated SATA temperatures |
+
+Each current GPU group at `61 + i*7` contains usage (u8), clock (u16 BE), power (u16 BE), and used VRAM (u16 BE). Each GPU maximum group at `95 + i*6` contains maximum clock, maximum power, and total VRAM as u16 big-endian values.
+
+NexLinq represents RAM GiB with one byte for the integer portion and one byte for the two-digit decimal portion. Although these offsets are source-confirmed, the first live Linux implementation still zero-fills offsets 56-122 pending Linux-side collection and physical validation.
 
 Validated Linux behavior on 2026-09-03:
 
@@ -155,7 +228,11 @@ fans 677, 698, 3116, 554, 497 RPM
 
 and received a valid echo acknowledgement.
 
-Neither the 56-byte nor 123-byte one-shot packet produced a visible change while the LCD was showing a background-only static layout. The on-screen clock remained the timestamp baked into the JPEG. This is strong evidence that `0x21` is the live data transport, while a separate native widget/layout configuration is required to render those values.
+Neither the 56-byte nor 123-byte one-shot packet produced a visible change while the LCD was showing a background-only static layout. The on-screen clock remained the timestamp baked into the JPEG. This established that `0x21` is the live data transport while a native widget/layout configuration is required to render it.
+
+On 2026-09-04 Linux sent the capture-derived sensor-widget `0x30` configuration, received a 512-byte acknowledgement, and displayed a native CPU-temperature line graph. A one-second Linux `0x21` loop then produced acknowledged, visible graph updates without repeated JPEG uploads or repeated `0x30` configuration.
+
+Ctrl+C stopped the Linux telemetry loop cleanly, but the LCD retained its last native layout/value. Windows NexLinq had previously shown the same retained-last-value behavior for sensor diagnostics. Continued display after host updates stop must not be mistaken for continued live telemetry.
 
 Do not infer that arbitrary text, color, visibility, or blinking can be controlled through `0x21` alone. That remains unproven.
 

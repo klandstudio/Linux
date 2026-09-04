@@ -8,7 +8,7 @@ Practical Linux hardware projects, reverse engineering, and tooling from KLand S
 
 Native Linux control of the Phanteks LCD6-HD over USB HID.
 
-**Status:** static JPEG display control is confirmed working on Ubuntu with LCD firmware `V1.0.0.10`.
+**Status:** static JPEG control and native CPU-temperature graph updates are confirmed working on Ubuntu with LCD firmware `V1.0.0.10`.
 
 The first proven display path is:
 
@@ -21,6 +21,14 @@ The activation detail that completed the Linux implementation was:
 ```text
 Working: 01 30 00 01 00 01 ...
 Failed:  01 30 00 01 00 00 ...
+```
+
+The native live path is now also physically validated:
+
+```text
+0x30 configure native sensor widget
+-> recurring 123-byte 0x21 telemetry reports
+-> acknowledged on-device graph updates
 ```
 
 See [`projects/phanteks-lcd6-linux/`](projects/phanteks-lcd6-linux/) for the code, protocol notes, and reproducible example.
