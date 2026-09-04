@@ -1,193 +1,318 @@
 # Validation record
 
+This file records physical LCD6-HD validation results separately from source-only protocol recovery.
+
 ## Static-image control — confirmed
 
 Date: 2026-09-01
 
-Device firmware reported immediately before the test:
+Firmware:
 
 ```text
-W2,1A18C,AIO,FDT,LCD6-HD,V1.0.0.10,Aug  6 2026,13:53:58
+V1.0.0.10
 ```
 
-The Linux test used the established `0x2A -> 0x28 -> 0x30` sequence with one change from the previous failed implementation:
+Linux used the established sequence:
 
 ```text
-old activation prefix: 01 30 00 01 00 00
-new activation prefix: 01 30 00 01 00 01
+0x22 verify
+0x2A configure
+0x28 acknowledged JPEG pages
+0x30 activate
 ```
 
-The run completed as follows:
+The decisive activation change was:
 
 ```text
-Using /dev/hidraw4
-Verified: W2,1A18C,AIO,FDT,LCD6-HD,V1.0.0.10,Aug  6 2026,13:53:58
-1/3 Configuring background-only landscape mode...
-Exact configuration echo received; report accepted.
-2/3 Uploading the test-card JPEG...
-Uploading 173,096 bytes in 172 acknowledged packets...
-First image packet received a matching page acknowledgement.
-   10% (18/172)
-   20% (35/172)
-   30% (52/172)
-   40% (69/172)
-   50% (86/172)
-   60% (104/172)
-   70% (121/172)
-   80% (138/172)
-   90% (155/172)
-  100% (172/172)
-3/3 Sending background-only layout commit (0x30)...
-Complete sequence sent in one uninterrupted HID session.
+old: 01 30 00 01 00 00
+new: 01 30 00 01 00 01
 ```
 
-Physical result: the LCD immediately switched to the uploaded 1480×720 test image.
+Physical result: the LCD immediately switched to the uploaded 1480×720 JPEG.
 
-A later capture of a successful static-image transaction established the more precise sequencing now used in the public implementation:
+Later capture correlation refined the working timing to approximately:
 
-- about 117 ms between the `0x2A` acknowledgement and first `0x28` JPEG packet;
-- about 105 ms between the final `0x28` acknowledgement and `0x30` apply;
-- `0x30` apply response at report offset 11 = `0x01`.
+- 120 ms between `0x2A` ACK and first `0x28` page;
+- 100 ms between final `0x28` ACK and `0x30` apply.
 
-The Linux static sender was updated to use a 120 ms pre-upload delay, a 100 ms pre-apply delay, and to require the observed `0x30` success response.
+The `0x30` response is checked for the observed success state.
 
 ## Static-image persistence — confirmed
 
 Date: 2026-09-03
 
-After a successful Linux dashboard upload, no `panda_lcd` sender process, user service, system service, or autostart entry was running.
+After a successful Linux dashboard upload, the host was shut down and AC power removed for roughly 30 seconds.
 
-The host was then shut down normally, PSU power was removed, and the system remained without AC power for roughly 30 seconds.
+On cold startup the previously uploaded Panda dashboard returned without another Linux image transfer.
 
-On cold power-up the LCD showed the previously uploaded Panda dashboard again without a new Linux image transfer.
-
-Observed startup sequence:
+Observed sequence:
 
 ```text
 Panda dashboard -> brief Phanteks screen -> Panda dashboard
 ```
 
-This confirms that the applied static image/configuration is retained by the LCD/controller across complete power loss. Routine live telemetry therefore should not be implemented by repeatedly writing JPEGs with `0x28`.
+Conclusion: repeated JPEG writes are not an appropriate live-telemetry mechanism.
 
-## Native `0x21` telemetry transport — confirmed
+## Native `0x21` transport — confirmed
 
 Date: 2026-09-03
 
 ### 56-byte form
 
-Linux sent one short `0x21` SetHandshakeData packet containing live CPU/GPU/fan values.
+Linux sent live CPU/GPU/fan values in a 56-byte payload. The LCD returned a 512-byte acknowledgement whose telemetry payload matched the transmitted payload.
 
-Representative values:
+### Initial 123-byte form
 
-```text
-CPU: 36.25 C
-GPU temps: [33.0]
-Fan RPMs [top,rear,pump,side,bottom]: [704, 665, 3116, 552, 492]
-```
+Linux reproduced NexLinq's normal 123-byte packet shape while zero-filling the then-unresolved trailing fields.
 
-The device returned a 512-byte acknowledgement whose payload matched the transmitted 56-byte payload.
-
-Wireshark captured the expected HID OUT/IN transaction pair.
-
-No reliable visual observation was recorded for the first short-form test because the LCD was not being watched at the moment of transmission.
-
-### 123-byte form
-
-Linux was then extended to reproduce NexLinq's normal 123-byte (`0x007b`) telemetry packet shape while deliberately leaving currently-undecoded bytes 56-122 as zero.
-
-The LCD was watched continuously during this test.
-
-Representative values:
+Representative run:
 
 ```text
 CPU: 35.75 C
 GPU temps: [33.0]
 Fan RPMs [top,rear,pump,side,bottom]: [677, 698, 3116, 554, 497]
-```
-
-Result:
-
-```text
 Sent one 0x21 packet (123-byte full) to /dev/hidraw4; ACK length=512
 ```
 
-The acknowledgement payload matched the transmitted 123-byte payload.
+Physical result while a static background-only layout was active: no visible change.
 
-Physical result: **no visible change**.
+Conclusion: accepted `0x21` telemetry does not create a visible widget by itself.
 
-The LCD continued showing the static Panda dashboard, including the old baked-in clock value `20:37:06`. This confirms that the visible clock was still part of the persistent JPEG and that accepted `0x21` telemetry does not by itself create or enable a native widget in the background-only layout.
-
-Private reference captures retained outside this public repository:
-
-```text
-linux_0x21_single_known_good.pcapng
-linux_0x21_full_123_no_visual.pcapng
-```
-
-They are intentionally not committed because the public repository does not need large raw captures to document the validated behavior.
-
-## Native widget rendering and live updates — confirmed
+## Native CPU widget — confirmed
 
 Date: 2026-09-04
 
-Linux reproduced a capture-verified `0x30` native sensor-widget configuration using line style and a one-second widget frequency:
+Linux reproduced a capture-verified `0x30` sensor-widget configuration using line style and one-second interval.
 
 ```text
 Sent one native widget 0x30 configuration to /dev/hidraw4;
 style=line, interval=1s, ACK length=512
 ```
 
-Physical result: the LCD switched to a native CPU-temperature line graph labeled `AMD Ryzen 9 9950X`. The displayed value was approximately 35 C.
+Physical result: the LCD displayed a native CPU-temperature line graph labeled `AMD Ryzen 9 9950X`.
 
-Linux then sent one full 123-byte `0x21` telemetry report:
+A subsequent full `0x21` report visibly changed the graph.
 
-```text
-CPU: 35.75 C
-GPU temps: [33.0]
-Fan RPMs [top,rear,pump,side,bottom]: [726, 668, 3125, 550, 473]
-Sent one 0x21 packet (123-byte full) to /dev/hidraw4; ACK length=512
-```
+A `native-live` test then configured the widget once and sent one 123-byte `0x21` report per second for thirty cycles. Each observed report received a 512-byte ACK and the graph visibly advanced several times.
 
-The graph visibly changed after the packet.
+Ctrl+C stopped host updates cleanly. The graph remained displayed afterward, confirming that the LCD retains its last native layout/value.
 
-A subsequent `native-live` test configured the widget once and sent one full `0x21` report per second. It completed thirty cycles with 512-byte acknowledgements, and the graph visibly advanced several times. No repeated JPEG uploads or repeated `0x30` configuration occurred. Ctrl+C stopped the sender cleanly.
-
-The LCD continued displaying the graph after Ctrl+C. This does not mean telemetry continued: Windows NexLinq had previously left its last sensor diagnostic/value displayed after it stopped. The confirmed interpretation is that the device retains the last native layout/value while fresh graph updates depend on host `0x21` reports.
-
-The corresponding Linux `0x30` capture is retained privately as:
-
-```text
-linux_0x30_native_widget_line_1s.pcapng
-```
-
-## Offline schema recovery — source-confirmed
+## Offline selector/schema recovery — source-confirmed
 
 Date: 2026-09-04
 
-The installed Windows NexLinq assemblies were inspected from a read-only NTFS mount. `LibPhanteks.Lcd6hdMaster.SetLcdInfo` confirmed the native `0x30` sensor-widget field layout, and `SetHandshakeData` confirmed all fields in the 123-byte `0x21` payload.
+Installed NexLinq assemblies and embedded WebView resources were inspected from a read-only Windows mount.
 
-This static analysis confirms field construction but does not replace physical validation. The public repository records the derived protocol map without redistributing vendor binaries or decompiled vendor source. Human-readable source-selector mappings and Linux population of the newly decoded telemetry fields remain pending.
+Recovered source selectors include:
+
+```text
+1      CPU temperature
+2-6    GPU temperature source class
+7-26   fan RPM
+27     CPU utilization
+28     CPU clock
+29     CPU power
+30     GPU 1 load
+31     GPU 1 clock
+32     GPU 1 power
+42     RAM used
+43     PSU Power Out
+44     PSU Power In
+45     PSU Efficiency
+46-50  NVMe temperature
+51-55  SATA temperature
+```
+
+IDs `33-41` are GPU-associated by broad internal checks but are not assigned or exposed by the recovered NexLinq JavaScript UI. They remain intentionally unresolved.
+
+The complete 123-byte `0x21` field layout was also source-confirmed.
+
+## Full populated 123-byte Linux telemetry — confirmed
+
+Date: 2026-09-04
+
+The private Linux pipeline was extended to populate the source-confirmed trailing fields from real Linux telemetry rather than leaving offsets `56-122` zero.
+
+### Linux data sources verified
+
+CPU:
+
+```text
+/proc/stat                         utilization
+cpu0/cpufreq/scaling_cur_freq    current clock
+cpu0/cpufreq/cpuinfo_max_freq    maximum clock
+```
+
+NVIDIA query fields added:
+
+```text
+clocks.current.graphics
+clocks.max.graphics
+power.draw
+power.limit
+power.max_limit
+memory.used
+memory.total
+utilization.gpu
+```
+
+Important distinction verified on the RTX 3090:
+
+```text
+power.limit     = 370 W
+power.max_limit = 390 W
+```
+
+NexLinq `PowerMax` is populated from `power.max_limit`, not `power.limit`.
+
+Representative telemetry after collector changes:
+
+```text
+CPU clock MHz: 4396.169
+CPU max MHz:   5756.452
+GPU 0: clock=210.0 MHz,
+       clock_max=2115.0 MHz,
+       power=9.33 W,
+       power_limit=370.0 W,
+       power_max=390.0 W,
+       VRAM=15.0/24576.0 MiB,
+       util=0.0%
+```
+
+CPU current clock is dynamic and changes normally between samples.
+
+### Unsupported fields intentionally zero
+
+No verified Linux source was found for:
+
+```text
+CPU current power
+CPU maximum power
+PSU output power
+PSU input power
+PSU efficiency
+```
+
+Those payload fields remain zero by design.
+
+### Offline packet inspection
+
+Before sending, Linux built and decoded the 123-byte packet entirely in memory.
+
+Representative result:
+
+```text
+payload_len: 123
+cpu_temp: 37
+cpu_util: 0
+cpu_clock_mhz: 4386
+cpu_power_w: 0
+ram_used: 3.26 GiB
+psu_out_w: 0
+psu_in_w: 0
+psu_eff_pct: 0
+ram_total: 60.34 GiB
+cpu_clock_max_mhz: 5756
+cpu_power_max_w: 0
+gpu0: util=0%
+      clock=210MHz
+      power=9W
+      vram_used=15MiB
+      clock_max=2115MHz
+      power_max=390W
+      vram_total=24576MiB
+nvme0_temp: 47
+```
+
+The one-shot offline test showed CPU utilization as zero because a fresh sampler had not yet accumulated its second `/proc/stat` sample. The production send path performs the second sample before transmitting.
+
+### Physical full-packet test
+
+Before the command, the LCD was watched continuously.
+
+Command:
+
+```text
+python3 -m panda_lcd.cli telemetry-send-once --full
+```
+
+Terminal result:
+
+```text
+CPU: 36.625 C
+GPU temps: [33.0]
+Fan RPMs [top,rear,pump,side,bottom]: [699, 774, 3116, 565, 497]
+Sent one 0x21 packet (123-byte full) to /dev/hidraw4; ACK length=512
+```
+
+Physical observation from the user:
+
+```text
+graph went up by 1
+```
+
+This is the key September 4 milestone. It confirms that:
+
+- the fully populated report is accepted;
+- the 512-byte ACK matches the transmitted telemetry payload;
+- the expanded fields do not disrupt native telemetry;
+- the active native CPU graph consumes the report and advances visibly.
+
+The full populated 123-byte Linux telemetry implementation is therefore **physically validated**.
+
+## Code-quality checkpoint — passed
+
+The modified private files were diff-reviewed:
+
+```text
+panda_lcd/telemetry.py
+panda_lcd/phanteks.py
+panda_lcd/cli.py
+```
+
+Only intended changes were observed.
+
+Syntax validation passed:
+
+```text
+python3 -m py_compile panda_lcd/phanteks.py panda_lcd/telemetry.py panda_lcd/cli.py
+```
+
+The stale telemetry-builder docstring was corrected and a duplicate local u8 helper was removed.
 
 ## Current boundary
 
-Validated now:
+### Physically validated
 
 - static JPEG upload and activation from Linux;
-- static image retention across full power loss;
-- `0x21` 56-byte telemetry transport and echo acknowledgement;
-- `0x21` 123-byte telemetry transport and echo acknowledgement;
-- Linux fan ordering correlation for top/rear/pump/side/bottom;
-- native line-widget configuration through `0x30`;
-- visible native CPU-temperature graph updates from Linux `0x21` telemetry;
-- clean stopping of host updates with retained last layout/value on the LCD;
-- static-source confirmation of the complete 123-byte telemetry schema.
+- static image retention across complete AC power loss;
+- 56-byte `0x21` transport;
+- 123-byte `0x21` transport;
+- native CPU-temperature `0x30` widget;
+- thirty-cycle native live graph updates;
+- retained-last-value behavior after host updates stop;
+- **populated** 123-byte CPU/GPU/RAM/NVMe Linux telemetry;
+- 512-byte ACK validation of the expanded payload;
+- visible graph advancement using the expanded payload.
 
-Not yet validated:
+### Source-confirmed but not yet physically exercised as separate native widgets
 
-- human-readable mappings for every native sensor source-selector ID;
-- Linux collection/rendering of the newly decoded CPU utilization, clock, power, GPU, RAM, PSU, and disk fields;
-- multiple simultaneous native widgets or both RTX 3090s;
-- arbitrary native text, placement, color, visibility, or blinking;
-- all orientations/layouts or other firmware versions.
+- CPU utilization selector `27`;
+- CPU clock selector `28`;
+- GPU load/clock/power selectors `30-32`;
+- RAM selector `42`;
+- PSU selectors `43-45`;
+- NVMe/SATA selectors `46-55`.
 
-The next target is recovering the source-selector mapping from NexLinq's packaged UI assets before adding more native metrics.
+### Intentionally unresolved / unavailable
+
+- selector IDs `33-41`;
+- live CPU power on the validation host;
+- live PSU output/input/efficiency on the validation host;
+- multiple simultaneous native widgets;
+- generalized placement/color/alarm behavior;
+- second RTX 3090 native-widget behavior.
+
+## Next validation target
+
+Generalize the private `0x30` sensor-widget builder to an allowlisted, already recovered source selector. Build/decode candidate reports offline first, then physically test one low-risk source such as CPU utilization (`27`) or GPU load (`30`). Arbitrary selector probing remains out of scope.
