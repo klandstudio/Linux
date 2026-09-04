@@ -107,7 +107,7 @@ For sensor widget type `0x02`:
 | 1 | 12 | widget mode/style |
 | 2 | 13 | position |
 | 3-5 | 14-16 | source selectors 1-3 |
-| 6-11 | 17-22 | three u16 BE maximum values |
+| 6-11 | 17-22 | three u16 BE source-specific maximum values |
 | 12-13 | 23-24 | alarm temperature/RPM |
 | 14 | 25 | alarm enable where applicable |
 | 15 | 26 | frequency |
@@ -128,6 +128,22 @@ The physically validated CPU-temperature line/1-second request starts:
 ```
 
 with label `AMD Ryzen 9 9950X`.
+
+### Source-specific maximum values
+
+Decompiled NexLinq `getMaxValue()` confirms the three u16 BE maximum fields are derived by selected source:
+
+- fan selectors `7-26` -> configured max RPM;
+- `28` -> CPU max clock;
+- `29` -> CPU max power;
+- `31` -> GPU 1 max clock;
+- `32` -> GPU 1 max power;
+- `42` -> packed RAM total;
+- `43-44` -> constant display scale `1200`.
+
+Direct-value selectors such as CPU utilization (`27`), GPU utilization (`30`), and NVMe temperature (`46`) do not require one of these maxima for the validated line-widget behavior.
+
+The GPU-clock physical test used `2115` MHz in all three maximum fields at report offsets `17-22`.
 
 ## Recovered source selectors
 
@@ -156,17 +172,19 @@ The recovered menu currently creates first-GPU entries for selector `2`, `30`, `
 
 IDs `33-41` were searched across all extracted NexLinq JavaScript. No selector menu entry, parameter, or source assignment was found. Decompiled C# `getMaxValue()` also provides no selector-specific handling for them. They remain intentionally unresolved.
 
-`getMaxValue()` confirms mode-specific maxima for:
+## Line-widget footer/history semantics
 
-- fan selectors `7-26` -> configured max RPM;
-- `28` -> CPU max clock;
-- `29` -> CPU max power;
-- `31` -> GPU 1 max clock;
-- `32` -> GPU 1 max power;
-- `42` -> packed RAM total;
-- `43-44` -> constant display scale `1200`.
+Physical GPU-clock testing exposed behavior that was easy to miss when values were flat. In the validated line widget, the three bottom statistics behave as:
 
-The `1200` PSU scale is not evidence that live PSU telemetry exists on a particular host.
+```text
+left    = minimum of recent history
+middle  = maximum of recent history
+right   = current value
+```
+
+When GPU clock changed from a retained ~1.93 GHz value to a newly transmitted 210 MHz value, the right/current field changed first, the left/minimum followed extremely quickly, and the middle/maximum remained at ~1.93 GHz until the older high sample aged out roughly 15+ seconds later. It then fell to 210 MHz.
+
+This matches the recovered NexLinq preview logic, which maintains a rolling `tempData` history and derives `min`, `max`, and `cur` separately. The firmware's exact internal implementation is not claimed to be identical to the JavaScript preview, but the physical behavior agrees with those semantics.
 
 ## `0x21` — SetHandshakeData telemetry
 
@@ -255,6 +273,20 @@ No verified Linux CPU-power or PSU telemetry source was present on the validatio
 
 The expanded 123-byte packet received a matching 512-byte acknowledgement and the existing native CPU graph visibly advanced by one sample.
 
+## Physically validated native selectors
+
+The cleaned public native builder is intentionally allowlisted to selectors physically exercised from Linux:
+
+| Selector | Metric | Physical result |
+|---:|---|---|
+| 1 | CPU temperature | native line widget and live graph confirmed |
+| 27 | CPU utilization | idle ~0.616% encoded/displayed as 1%; controlled 8-of-32-thread load produced 26% |
+| 30 | GPU 1 utilization | idle 0%; controlled `glmark2` load produced an exact same-sample 71% collector/display correlation |
+| 31 | GPU 1 clock | retained ~1.93 GHz value switched to fresh 210 MHz; 2115 MHz maximum supplied in `0x30` |
+| 46 | NVMe 1 temperature | measured 45.85 °C encoded/displayed as 46 °C |
+
+For the CPU-utilization load test, the synthetic workload was designed to add roughly 25 percentage points of total utilization on 32 logical CPUs. The machine had existing fractional utilization (~0.616% in an adjacent idle sample), and NexLinq-compatible u8 encoding rounds the measured value. The resulting 26% display is therefore consistent with the measurement/rounding chain and should not be dismissed as arbitrary background noise.
+
 ## Confirmed static sequence
 
 ```text
@@ -274,6 +306,8 @@ close session
 The static JPEG survives complete power loss. Live telemetry should therefore use native `0x21` reports plus native `0x30` widget configuration, not repeated JPEG uploads.
 
 Native widgets also retain the last layout/value after host updates stop. A frozen visible graph is not proof that fresh telemetry is arriving.
+
+Changing only the `0x30` selector can immediately expose a value already retained from the most recent full `0x21` telemetry packet; this was observed during selector 46 and 31 validation.
 
 ## Publication boundary
 
