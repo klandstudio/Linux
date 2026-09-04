@@ -26,6 +26,16 @@ SET_HANDSHAKE_DATA = 0x21
 TELEMETRY_SHORT_PAYLOAD_SIZE = 56
 TELEMETRY_FULL_PAYLOAD_SIZE = 123
 
+# These selectors have each been physically exercised as separate native
+# widgets from Linux. This is deliberately an allowlist, not a numeric range.
+PHYSICALLY_VALIDATED_NATIVE_SELECTORS = {
+    1: "CPU temperature",
+    27: "CPU utilization",
+    30: "GPU 1 utilization",
+    31: "GPU 1 clock",
+    46: "NVMe 1 temperature",
+}
+
 
 def _u8(value) -> int:
     if value is None:
@@ -157,19 +167,37 @@ def send_handshake_data(fd, *args, **kwargs):
     return reply
 
 
-def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
-    """Build the capture-derived native CPU-temperature widget report.
+def build_native_widget_report(
+    *,
+    graph_style="line",
+    interval_seconds=1,
+    source_id=1,
+    max_value=0,
+):
+    """Build an allowlisted, physically validated native sensor-widget report.
 
-    The line/1-second configuration is physically validated from Linux.
-    Bar mode and the allowed interval values are capture/source-confirmed.
-    This intentionally remains CPU-temperature-only; arbitrary source
-    selectors are not accepted here.
+    ``source_id`` is intentionally restricted to selectors physically exercised
+    from Linux. ``max_value`` maps to all three source-specific u16 BE maximum
+    fields at report offsets 17..22. Direct-value sources use zero. GPU clock
+    selector 31 requires its source-specific maximum clock in MHz.
+
+    The line/1-second form is physically validated. Bar mode and the allowed
+    interval values remain capture/source-confirmed unless separately noted.
     """
     styles = {"bar": 0x02, "line": 0x03}
     if graph_style not in styles:
         raise ValueError("graph_style must be 'line' or 'bar'")
     if interval_seconds not in (1, 10):
         raise ValueError("Only capture-verified 1 or 10 second intervals are allowed")
+    if source_id not in PHYSICALLY_VALIDATED_NATIVE_SELECTORS:
+        raise ValueError(
+            "source_id must be one of "
+            + ", ".join(map(str, PHYSICALLY_VALIDATED_NATIVE_SELECTORS))
+        )
+
+    max_value = max(0, min(0xFFFF, int(max_value)))
+    if source_id == 31 and max_value == 0:
+        raise ValueError("GPU clock selector 31 requires max_value in MHz")
 
     report = bytearray(REPORT_OUT)
     report[0:17] = bytes(
@@ -188,13 +216,18 @@ def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
             0x02,
             styles[graph_style],
             0x02,
-            0x01,
-            0x01,
-            0x01,
+            source_id,
+            source_id,
+            source_id,
         )
     )
+    report[17:19] = max_value.to_bytes(2, "big")
+    report[19:21] = max_value.to_bytes(2, "big")
+    report[21:23] = max_value.to_bytes(2, "big")
     report[26] = interval_seconds
 
+    # Preserve the capture-derived text payload while selector behavior is
+    # generalized independently. Device-name text is a separate future target.
     label = b"AMD Ryzen 9 9950X"
     report[27] = len(label)
     report[28 : 28 + len(label)] = label
@@ -202,11 +235,20 @@ def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
     return report
 
 
-def send_native_cpu_widget_config(fd, *, graph_style="line", interval_seconds=1):
-    """Send the capture-derived CPU widget config and require its 512-byte ACK."""
-    report = build_native_cpu_widget_report(
+def send_native_widget_config(
+    fd,
+    *,
+    graph_style="line",
+    interval_seconds=1,
+    source_id=1,
+    max_value=0,
+):
+    """Send one allowlisted native widget config and require its 512-byte ACK."""
+    report = build_native_widget_report(
         graph_style=graph_style,
         interval_seconds=interval_seconds,
+        source_id=source_id,
+        max_value=max_value,
     )
     write_report(fd, report)
     reply = wait_for_report(fd, ACTIVATE_LAYOUT)
@@ -229,3 +271,24 @@ def send_native_cpu_widget_config(fd, *, graph_style="line", interval_seconds=1)
             + ", ".join(map(str, differences[:16]))
         )
     return reply
+
+
+def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
+    """Backward-compatible wrapper for the validated CPU-temperature widget."""
+    return build_native_widget_report(
+        graph_style=graph_style,
+        interval_seconds=interval_seconds,
+        source_id=1,
+        max_value=0,
+    )
+
+
+def send_native_cpu_widget_config(fd, *, graph_style="line", interval_seconds=1):
+    """Backward-compatible wrapper for the validated CPU-temperature sender."""
+    return send_native_widget_config(
+        fd,
+        graph_style=graph_style,
+        interval_seconds=interval_seconds,
+        source_id=1,
+        max_value=0,
+    )
