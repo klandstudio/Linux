@@ -158,17 +158,18 @@ def send_handshake_data(fd, *args, **kwargs):
 
 
 def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
-    """Build the physically validated native CPU-temperature widget report.
+    """Build the capture-derived native CPU-temperature widget report.
 
-    This intentionally remains CPU-temperature-only. Generalizing source
-    selectors is the next reverse-engineering milestone; arbitrary selectors
-    are not accepted here.
+    The line/1-second configuration is physically validated from Linux.
+    Bar mode and the allowed interval values are capture/source-confirmed.
+    This intentionally remains CPU-temperature-only; arbitrary source
+    selectors are not accepted here.
     """
     styles = {"bar": 0x02, "line": 0x03}
     if graph_style not in styles:
         raise ValueError("graph_style must be 'line' or 'bar'")
     if interval_seconds not in (1, 10):
-        raise ValueError("Only validated 1 or 10 second intervals are allowed")
+        raise ValueError("Only capture-verified 1 or 10 second intervals are allowed")
 
     report = bytearray(REPORT_OUT)
     report[0:17] = bytes(
@@ -202,7 +203,7 @@ def build_native_cpu_widget_report(*, graph_style="line", interval_seconds=1):
 
 
 def send_native_cpu_widget_config(fd, *, graph_style="line", interval_seconds=1):
-    """Configure the validated native CPU graph and require its 512-byte ACK."""
+    """Send the capture-derived CPU widget config and require its 512-byte ACK."""
     report = build_native_cpu_widget_report(
         graph_style=graph_style,
         interval_seconds=interval_seconds,
