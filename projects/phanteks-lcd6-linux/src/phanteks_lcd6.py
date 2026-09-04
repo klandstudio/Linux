@@ -150,17 +150,16 @@ def configure_image_background(fd: int, brightness: int = 70) -> None:
     if len(reply) < 20:
         raise RuntimeError("LCD-configuration reply was too short")
 
-    if reply == bytes(report[:REPORT_IN]):
-        print("Exact configuration echo received; report accepted.")
-    elif reply[11] == ord("D"):
-        print("Configuration completion received.")
-    else:
+    if reply != bytes(report[:REPORT_IN]):
         raise RuntimeError(
             "Unexpected LCD-configuration reply: " + reply[:20].hex(" ")
         )
 
-    # Observed NexLinq sequencing waits 50 ms before media transfer.
-    time.sleep(0.05)
+    print("Exact configuration echo received; report accepted.")
+
+    # A successful Windows static-image capture began JPEG transfer roughly
+    # 117 ms after the 0x2A acknowledgement. Use a small safety margin.
+    time.sleep(0.12)
 
 
 def upload_background(fd: int, jpeg: bytes, *, timeout: float = 30.0) -> None:
@@ -193,7 +192,7 @@ def upload_background(fd: int, jpeg: bytes, *, timeout: float = 30.0) -> None:
             raise RuntimeError("Image upload exceeded its transaction deadline")
 
         reply = wait_for_report(fd, WRITE_IMAGE, timeout=min(1.0, remaining))
-        if len(reply) < 9:
+        if len(reply) < 12:
             raise RuntimeError(f"Short image acknowledgement for packet {page + 1}")
 
         acknowledged_page = int.from_bytes(reply[6:9], "big")
@@ -214,13 +213,18 @@ def upload_background(fd: int, jpeg: bytes, *, timeout: float = 30.0) -> None:
 
 
 def activate_background(fd: int) -> None:
-    """Activate the uploaded background with the validated 0x30 prefix."""
+    """Activate the uploaded background and require the observed success ACK."""
     report = bytearray(REPORT_OUT)
     report[: len(KNOWN_GOOD_ACTIVATE_PREFIX)] = KNOWN_GOOD_ACTIVATE_PREFIX
     write_report(fd, report)
 
-    # The official library does not wait for a 0x30 response.
-    time.sleep(0.50)
+    reply = wait_for_report(fd, ACTIVATE_LAYOUT)
+    if len(reply) < 12:
+        raise RuntimeError("Layout-activation reply was too short")
+    if reply[11] != 0x01:
+        raise RuntimeError(
+            "Unexpected 0x30 activation status: " + reply[:16].hex(" ")
+        )
 
 
 def show_jpeg(jpeg: bytes, *, brightness: int = 70) -> str:
@@ -238,7 +242,7 @@ def show_jpeg(jpeg: bytes, *, brightness: int = 70) -> str:
         print("2/3 Uploading JPEG...")
         upload_background(fd, jpeg)
 
-        # Observed NexLinq sequencing waits 100 ms before SetLcdInfo/0x30.
+        # Successful Windows sequencing waited about 105 ms before 0x30.
         time.sleep(0.10)
 
         print("3/3 Sending validated layout activation (0x30)...")
