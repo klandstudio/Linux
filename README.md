@@ -8,9 +8,9 @@ Practical Linux hardware projects, reverse engineering, and tooling from KLand S
 
 Native Linux control of the Phanteks LCD6-HD over USB HID.
 
-**Status:** static JPEG control and native CPU-temperature graph updates are confirmed working on Ubuntu with LCD firmware `V1.0.0.10`.
+**Status:** static JPEG control, native CPU-temperature graph updates, and a populated source-confirmed 123-byte live telemetry payload are physically validated on Ubuntu with LCD firmware `V1.0.0.10`.
 
-The first proven display path is:
+The static display path is:
 
 ```text
 0x2A configure -> acknowledged 0x28 JPEG pages -> 0x30 activate
@@ -23,15 +23,20 @@ Working: 01 30 00 01 00 01 ...
 Failed:  01 30 00 01 00 00 ...
 ```
 
-The native live path is now also physically validated:
+The native live path is:
 
 ```text
 0x30 configure native sensor widget
 -> recurring 123-byte 0x21 telemetry reports
--> acknowledged on-device graph updates
+-> 512-byte echo acknowledgements
+-> on-device graph updates
 ```
 
-See [`projects/phanteks-lcd6-linux/`](projects/phanteks-lcd6-linux/) for the code, protocol notes, and reproducible example.
+The full telemetry implementation now carries real Linux CPU utilization/clock data, GPU utilization/clock/power/VRAM data, RAM values, fans, and NVMe temperature. CPU/PSU power fields remain zero where the host exposes no verified source.
+
+NexLinq's embedded UI was also recovered far enough to map the documented source-selector IDs for CPU, GPU, fans, RAM, PSU, NVMe, and SATA without arbitrary HID probing.
+
+See [`projects/phanteks-lcd6-linux/`](projects/phanteks-lcd6-linux/) for code, protocol notes, and the physical validation record.
 
 Project write-up: https://klandstudio.net/labs/phanteks-lcd6-linux/
 
@@ -53,4 +58,4 @@ See [`projects/ene-dram-persistent-rgb/`](projects/ene-dram-persistent-rgb/) for
 
 ## Scope
 
-This repository is intended to hold Linux-focused hardware projects, reverse engineering, and reusable tooling. Cross-platform companion tools are included when they are part of a Linux-originated hardware investigation. Experimental captures, vendor firmware payloads, private hardware identifiers, and unrelated workstation notes are kept out of the public repository.
+This repository is intended to hold Linux-focused hardware projects, reverse engineering, and reusable tooling. Cross-platform companion tools are included when they are part of a Linux-originated hardware investigation. Experimental captures, vendor firmware payloads, private hardware identifiers, extracted vendor assets, and unrelated workstation notes are kept out of the public repository.
