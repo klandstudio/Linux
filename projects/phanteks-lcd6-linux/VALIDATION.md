@@ -179,6 +179,8 @@ GPU 0: clock=210.0 MHz,
        util=0.0%
 ```
 
+CPU current clock is dynamic and changes normally between samples.
+
 ### Unsupported fields intentionally zero
 
 No verified Linux source was found for:
@@ -192,6 +194,37 @@ PSU efficiency
 ```
 
 Those payload fields remain zero by design.
+
+### Offline packet inspection
+
+Before sending, Linux built and decoded the 123-byte packet entirely in memory.
+
+Representative result:
+
+```text
+payload_len: 123
+cpu_temp: 37
+cpu_util: 0
+cpu_clock_mhz: 4386
+cpu_power_w: 0
+ram_used: 3.26 GiB
+psu_out_w: 0
+psu_in_w: 0
+psu_eff_pct: 0
+ram_total: 60.34 GiB
+cpu_clock_max_mhz: 5756
+cpu_power_max_w: 0
+gpu0: util=0%
+      clock=210MHz
+      power=9W
+      vram_used=15MiB
+      clock_max=2115MHz
+      power_max=390W
+      vram_total=24576MiB
+nvme0_temp: 47
+```
+
+The one-shot offline test showed CPU utilization as zero because a fresh sampler had not yet accumulated its second `/proc/stat` sample. The production send path performs the second sample before transmitting.
 
 ### Physical full-packet test
 
@@ -331,8 +364,6 @@ panda_lcd/cli.py
 ```
 
 Syntax validation was repeatedly run with `python3 -m py_compile` after edits.
-
-A temporary selector guard was once inserted into the wrong builder by an overly broad text replacement; the resulting `NameError` occurred before any HID send and was corrected offline. Subsequent telemetry and selector tests passed.
 
 ## Current boundary
 
