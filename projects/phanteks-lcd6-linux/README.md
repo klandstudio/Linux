@@ -27,6 +27,13 @@ Tested on Ubuntu with:
 0x30 apply/commit layout
 ```
 
+The activation detail that completed the Linux static path was:
+
+```text
+Working: 01 30 00 01 00 01 ...
+Failed:  01 30 00 01 00 00 ...
+```
+
 The applied JPEG survives normal shutdown and complete AC-power removal, so repeated JPEG writes are not appropriate for live telemetry.
 
 ### Native live path
