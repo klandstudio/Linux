@@ -27,6 +27,22 @@ See [`projects/phanteks-lcd6-linux/`](projects/phanteks-lcd6-linux/) for the cod
 
 Project write-up: https://klandstudio.net/labs/phanteks-lcd6-linux/
 
+### ENE DRAM Persistent RGB Save
+
+Persistent cold-boot static RGB for ENE/Aura-compatible memory.
+
+**Status:** confirmed across full power loss on a Silicon Power XPOWER Zenith RGB DDR5 kit. The project documents OpenRGB's hidden ENE save gate and a conservative SignalRGB `ENE_RAM.js` patch that adds a one-shot nonvolatile static-color save.
+
+The ENE save sequence centers on:
+
+```text
+0x8021 <- 0x01   # Static mode
+0x8020 <- 0x00   # Internal/effect mode
+0x80A0 <- 0xAA   # Save persistent state
+```
+
+See [`projects/ene-dram-persistent-rgb/`](projects/ene-dram-persistent-rgb/) for the tested procedure, safety notes, OpenRGB configuration, SignalRGB patch, rollback steps, and register references.
+
 ## Scope
 
-This repository is intended to hold Linux-focused projects that are useful beyond one machine. Experimental captures, vendor firmware payloads, private hardware identifiers, and unrelated workstation notes are kept out of the public repository.
+This repository is intended to hold Linux-focused hardware projects, reverse engineering, and reusable tooling. Cross-platform companion tools are included when they are part of a Linux-originated hardware investigation. Experimental captures, vendor firmware payloads, private hardware identifiers, and unrelated workstation notes are kept out of the public repository.
