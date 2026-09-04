@@ -48,7 +48,7 @@ Date: 2026-09-04
 
 A capture-verified `0x30` line-style, one-second sensor-widget configuration displayed a native CPU-temperature graph. Subsequent full `0x21` reports visibly advanced it.
 
-Stopping host updates left the last native layout/value displayed, proving that a frozen widget does not imply fresh telemetry.
+Stopping host updates left the last native layout/value displayed, proving that a frozen current value does not imply fresh telemetry.
 
 ## Full populated 123-byte Linux telemetry — confirmed
 
@@ -233,9 +233,67 @@ Conclusion: selectors `7-11` are physically validated as the workstation's top, 
 
 GPU fan percentage from `nvidia-smi` remains excluded because percentage is not physical tachometer RPM.
 
+## Automatic selector maxima and `native-live` — confirmed
+
+Date: 2026-09-04
+
+The private Linux pipeline was extended so `native-live` derives the `0x30` maximum from the same collected telemetry used for the full `0x21` packet instead of requiring a manually supplied maximum.
+
+An offline same-host derivation check produced:
+
+```text
+selector 7  -> 4000
+selector 8  -> 4000
+selector 9  -> 4000
+selector 10 -> 4000
+selector 11 -> 4000
+selector 28 -> 5756
+selector 31 -> 2115
+selector 32 -> 390
+selector 42 -> 15446 (0x3c56)
+```
+
+The max-dependent selector set is therefore handled as follows in the private pipeline:
+
+```text
+7-11 -> validated workstation fan maximum 4000 RPM
+28   -> SystemStat.cpu_clock_max_mhz
+31   -> GPU0.clock_max_mhz
+32   -> GPU0.power_max_w (NVIDIA power.max_limit)
+42   -> (whole OS-visible GiB << 8) | 0x56
+```
+
+Required maxima are validated before the widget is configured; missing clock/power/RAM maximum telemetry raises a clear error rather than silently sending zero.
+
+A continuous physical test used:
+
+```text
+native-live --source 32
+```
+
+Startup reported:
+
+```text
+source=32, max=390, ACK length=512
+```
+
+The process then returned valid 512-byte `0x21` acknowledgements through at least cycles 1, 10, 20, and 30 while the LCD continuously displayed GPU power varying approximately between `11 W` and `17 W`.
+
+The displayed minimum and maximum tracked that range correctly. The sender was stopped while the current value was `12 W`; shutdown was clean.
+
+Important refinement after sender stop:
+
+- current remained at the retained `12 W` value;
+- the earlier `11 W` minimum still aged upward after about one visible graph-history width;
+- the earlier `17 W` maximum likewise remained for about one visible graph-history width before aging out.
+
+Conclusion: max-dependent `native-live` is physically validated end-to-end for selector `32`, including automatic `390 W` max derivation and continuous full telemetry. Because the same helper feeds the already individually validated maximum rules for selectors `7-11`, `28`, `31`, `32`, and `42`, no redundant live run was required for every selector.
+
+The post-stop behavior also refines the persistence model: stopping host telemetry freezes the retained current value, but does not necessarily freeze rolling-history aging. Physical testing does not establish whether firmware advances the history by repeating the retained current sample or by another internal mechanism.
+
 ## Line-widget history semantics — refined physical result
 
-Across GPU clock, RAM used, CPU clock, and GPU power testing, the footer behaves as:
+Across GPU clock, RAM used, CPU clock, GPU power, and the later continuous GPU-power `native-live` run, the footer behaves as:
 
 ```text
 left   = minimum of rolling visible history
@@ -243,7 +301,9 @@ middle = maximum of rolling visible history
 right  = current value
 ```
 
-Current updates first. History-derived extrema persist until the old sample leaves the visible rolling history. Physical observation now strongly ties the retention interval to the graph's visible plotting width rather than an arbitrary independent timer.
+Current updates first. History-derived extrema persist until the old sample leaves the visible rolling history. Physical observation strongly ties the retention interval to the graph's visible plotting width rather than an arbitrary independent timer.
+
+The continuous selector-32 test further showed that after host telemetry stopped, the retained current stayed fixed while old extrema still aged out over roughly one visible graph width. This proves only the observed LCD behavior and does not identify the internal firmware algorithm.
 
 This is consistent with recovered NexLinq preview logic, but no claim is made that firmware internally executes the exact JavaScript algorithm.
 
@@ -285,11 +345,14 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 
 ## Next validation targets
 
-With selectors `7-11` complete, next work is limited to sources for which real telemetry exists:
+With automatic max-dependent `native-live` now physically validated, next work is limited to sources/features that add new information rather than repeating already-proven plumbing:
 
-- additional NVMe/SATA selectors;
+- additional NVMe/SATA selectors when real local telemetry exists;
 - remaining fan selectors only when a genuine mapped tachometer RPM source is available;
-- automatic selector-to-max derivation;
-- `native-live` support for max-dependent selectors.
+- device-name / label generalization;
+- multiple simultaneous native widgets;
+- placement, sizing, colors, and alarm behavior;
+- second RTX 3090 behavior after GPU-B is installed;
+- service/autostart packaging.
 
 CPU power selector `29` and PSU selectors `43-45` remain out of live testing until verified local telemetry sources exist.
