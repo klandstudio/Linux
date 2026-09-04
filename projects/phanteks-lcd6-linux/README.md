@@ -41,7 +41,7 @@ The applied JPEG survives normal shutdown and complete AC-power removal, so repe
 Native widgets are physically validated from Linux:
 
 ```text
-0x30 configure native sensor widget
+0x30 configure native sensor widget(s)
 -> recurring 123-byte 0x21 SetHandshakeData reports
 -> 512-byte echo acknowledgements
 -> visible graph/value updates
@@ -63,6 +63,39 @@ A continuous selector-32 run was physically validated with startup reporting `so
 
 A frozen native current value is not evidence that host telemetry is still arriving: the LCD retains the last native value after host updates stop. In the selector-32 `native-live` run, the current value remained at the final 12 W after sender stop while the earlier 11 W minimum and 17 W maximum still aged out over approximately one visible graph-history width. Therefore host-update stop freezes the retained current value but does not necessarily freeze rolling-history aging; the firmware mechanism is not claimed.
 
+### Multiple simultaneous native widgets
+
+Multiple native sensor widgets are now physically validated.
+
+Recovered NexLinq code shows that any nonzero layout is serialized as **one `0x30` report per item**, with 50 ms between reports. For each report:
+
+```text
+report[3]   = total item count
+report[4]   = lcd/item index
+report[5]   = layout index
+report[6:9] = zero-based item iteration, 24-bit BE
+```
+
+The first hardware-tested public path uses stock **layout 10**, which contains three item indices `0`, `1`, and `2`. The validating run configured:
+
+```text
+item 0 -> selector 1  CPU temperature
+item 1 -> selector 32 GPU power, max 390 W
+item 2 -> selector 47 second NVMe temperature field
+```
+
+All three configuration packets returned 512-byte acknowledgements. Live telemetry then correlated with the LCD as follows:
+
+```text
+CPU 47.75 C       -> LCD 48 C
+GPU0 11.86 W      -> LCD 12 W
+NVMe1 33.85 C     -> LCD 34 C
+```
+
+Fifteen subsequent full `0x21` cycles also returned 512-byte acknowledgements. Three distinct native regions were visible simultaneously.
+
+The `0x30` text1 field is source-confirmed and the public builder now accepts a caller-supplied ASCII label. Compact local labels use `CPU`, `GPU0`, `HD0`, and `HD1`. In the three-panel layout, trailing identifier characters were not separately confirmed as visually legible, so multi-widget/value operation is considered validated while compact-label presentation remains UI work.
+
 ## Physically validated native selectors
 
 The public native widget builder is conservatively allowlisted to selectors that were physically exercised from Linux:
@@ -81,7 +114,8 @@ The public native widget builder is conservatively allowlisted to selectors that
 | 31 | GPU 1 clock | 2115 MHz maximum; retained ~1.93 GHz -> fresh 210 MHz transition |
 | 32 | GPU 1 power | exact same-sample 9.46 W -> 9 W current display; 390 W maximum |
 | 42 | RAM used | retained 3.34 GiB -> fresh ~3.47 GiB transition with vendor RAM max packing |
-| 46 | NVMe 1 temperature | 45.85 °C source -> 46 °C display |
+| 46 | NVMe 0 temperature | first NVMe field physically correlated |
+| 47 | NVMe 1 temperature | second NVMe field; live `33 -> 34 C` behavior physically validated |
 
 The generalized builder does **not** expose arbitrary selector ranges.
 
@@ -202,6 +236,8 @@ For the RTX 3090, NexLinq `PowerMax` maps to NVIDIA `power.max_limit` (390 W on 
 - a strict physically validated `0x30` selector allowlist;
 - source-specific maximum-value fields;
 - validated RAM selector-42 max packing helper;
+- source-confirmed configurable text1 labels;
+- physically validated layout-10 three-widget report construction and sending;
 - backward-compatible CPU-temperature widget wrappers;
 - deliberate zeroing of unsupported CPU/PSU power telemetry.
 
@@ -242,10 +278,8 @@ Published code is limited to derived interoperability facts and paths that have 
 
 - additional NVMe/SATA selectors;
 - remaining fan selectors only when genuine mapped tachometer RPM sources exist;
-- expose a reusable public convenience layer for automatic selector maxima / continuous native telemetry;
-- device-name / label generalization;
-- multiple simultaneous native widgets;
-- placement, sizing, colors, and alarm behavior;
+- expand beyond the first physically validated three-item layout;
+- improve compact-label legibility and placement/sizing/colors/alarm behavior;
 - second RTX 3090 behavior after GPU-B is installed;
 - service/autostart packaging.
 
@@ -257,6 +291,7 @@ CPU power selector `29` and PSU selectors `43-45` remain out of live testing unt
 
 - [`PROTOCOL.md`](PROTOCOL.md) — byte-level protocol map
 - [`VALIDATION.md`](VALIDATION.md) — physical validation history
+- [`STORAGE-MAPPING.md`](STORAGE-MAPPING.md) — NVMe selector/device mapping
 - [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md) — methodological acknowledgements
 
 ## Project write-up
