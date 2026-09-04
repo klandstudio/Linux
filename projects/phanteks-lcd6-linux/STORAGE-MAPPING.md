@@ -1,21 +1,30 @@
 # Storage / NVMe mapping
 
-This file records the validation workstation's stable UI naming for NVMe temperature selectors separately from motherboard slot numbering.
+This file records the validation workstation's stable selector/device naming separately from motherboard slot numbering.
 
 ## UI naming convention
 
-The LCD/project uses zero-based generic names, matching the existing GPU convention:
+The project keeps zero-based storage identity, matching Linux enumeration and the existing GPU convention:
 
 ```text
 NVMe 0 -> selector 46 -> Linux nvme0
 NVMe 1 -> selector 47 -> Linux nvme1
 ```
 
-The on-screen names should remain `NVMe 0` and `NVMe 1`. They should not be renamed to motherboard M.2 slot numbers such as `NVMe 3`.
+For documentation and device identity, use `NVMe 0` and `NVMe 1`; do not rename a device to a motherboard slot number such as `NVMe 3`.
+
+For **compact native LCD panels**, the selected short labels are:
+
+```text
+HD0 -> NVMe 0 -> selector 46
+HD1 -> NVMe 1 -> selector 47
+```
+
+The `HD0` / `HD1` strings are display aliases only. They do not change Linux device enumeration or the selector mapping.
 
 ## Current hardware identity
 
-### NVMe 0
+### NVMe 0 / HD0
 
 ```text
 selector: 46
@@ -24,7 +33,7 @@ model: Samsung SSD 990 PRO 2TB
 physical motherboard slot: M2_1 (user-confirmed installation)
 ```
 
-### NVMe 1
+### NVMe 1 / HD1
 
 ```text
 selector: 47
@@ -65,4 +74,10 @@ later -> 34 °C
 
 The process continuously received 512-byte `0x21` acknowledgements and stopped cleanly. A post-run source check still showed the second NVMe composite source at 32.85 °C, consistent with normal whole-degree rounding and the observed temperature increase during the run.
 
-Conclusion: selector 47 is physically validated as the second NVMe temperature field, exposed in this project as `NVMe 1`.
+Conclusion: selector 47 is physically validated as the second NVMe temperature field, exposed in project documentation as `NVMe 1` and in compact native-panel UI as `HD1`.
+
+## Compact-label validation boundary
+
+The source-confirmed `0x30` text1 field accepts the new short labels, but the first three-panel physical test did **not** separately prove that trailing numeric suffixes are visually legible at that panel size. An apparent `1` in the earlier `NVMe 1` label was actually a vertical divider.
+
+Therefore `HD0` / `HD1` are the chosen compact naming convention, while exact rendered suffix legibility remains a presentation/layout task rather than a completed protocol validation.
