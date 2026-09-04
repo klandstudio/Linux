@@ -110,6 +110,42 @@ For sensor widget type `0x02`:
 | 82 | 93 | text3 length |
 | 83-114 | 94-125 | text3 |
 
+The text fields are therefore source-confirmed. The public builder exposes text1 as a caller-supplied ASCII label, truncated to 32 bytes. Physical testing has not yet established ideal label lengths for every compact panel size.
+
+### Nonzero-layout serialization
+
+Recovered NexLinq code confirms that nonzero layouts are not transmitted as one monolithic widget record. NexLinq loops over `lcd.lcds` and sends one `0x30` report per item:
+
+```text
+report[3]   = lcd.lcds.Count
+report[4]   = phLcdItem.index
+report[5]   = layoutIndex
+report[6:9] = i as 24-bit BE
+report[11+] = that item's widget payload
+```
+
+It waits 50 ms after each report.
+
+The first physically validated multi-widget Linux path uses LCD6-HD horizontal `layoutIndex=10`. Recovered UI resources define exactly three item indices for that stock layout:
+
+```text
+lcdIndex 0
+lcdIndex 1
+lcdIndex 2
+```
+
+Recovered `getLcdSize()` reports each of those three items as `370 x 360` for horizontal layout 10.
+
+The validating Linux headers were:
+
+```text
+01 30 00 03 00 0a 00 00 00 ...
+01 30 00 03 01 0a 00 00 01 ...
+01 30 00 03 02 0a 00 00 02 ...
+```
+
+All three returned 512-byte acknowledgements and produced three simultaneous live sensor regions when followed by recurring full `0x21` telemetry.
+
 ### Source-specific maximum values
 
 Installed vendor code confirms:
@@ -249,7 +285,8 @@ RAM telemetry is encoded as one byte for whole GiB plus one byte for the two-dig
 | 31 | GPU 1 clock | retained ~1.93 GHz -> fresh 210 MHz with 2115 MHz maximum |
 | 32 | GPU 1 power | 9.46 W sample encoded/displayed as 9 W with 390 W maximum |
 | 42 | RAM used | retained 3.34 GiB -> fresh ~3.47 GiB using `0x3c56` max |
-| 46 | NVMe 1 temperature | 45.85 °C encoded/displayed as 46 °C |
+| 46 | NVMe 0 temperature | first NVMe field physically correlated |
+| 47 | NVMe 1 temperature | second NVMe field; `0 -> 33 C`, later `34 C` |
 
 ## Line-widget footer/history semantics
 
@@ -278,7 +315,7 @@ Verified Linux sources include:
 - NVIDIA `power.max_limit` for NexLinq `PowerMax`;
 - NVIDIA used/total VRAM;
 - RAM used/total from `/proc/meminfo`;
-- NVMe temperature from hwmon.
+- multiple NVMe composite temperatures from hwmon in Linux enumeration order.
 
 For the RTX 3090:
 
