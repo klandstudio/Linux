@@ -43,27 +43,21 @@ That means repeated JPEG uploads are **not** the right mechanism for live teleme
 
 ## Native telemetry status
 
-Linux now successfully sends and receives acknowledgements for both known `0x21` SetHandshakeData forms:
+The native telemetry path is now physically validated from Linux:
 
 ```text
-56-byte payload  -> accepted, echo ACK
-123-byte payload -> accepted, echo ACK
+0x30 configure native sensor widget
+-> recurring 123-byte 0x21 SetHandshakeData reports
+-> acknowledged on-device graph updates
 ```
 
-The decoded portion currently includes:
+A capture-derived line-graph configuration produced a 512-byte acknowledgement and displayed a native CPU-temperature graph. A Linux live loop then sent one full `0x21` report per second. Every observed report received a 512-byte echo acknowledgement, and the graph visibly advanced several times as new values arrived.
 
-- Unix timestamp;
-- CPU temperature;
-- up to five GPU temperatures;
-- fan RPM values.
+Stopping the Linux sender with Ctrl+C stops fresh telemetry but does not clear the LCD. The device retains the last native layout/value, matching the behavior previously observed when Windows NexLinq stopped. A still-visible graph is therefore not evidence that fresh values are arriving.
 
-The 123-byte form matches NexLinq's normal packet length. Bytes 56-122 remain intentionally undecoded.
+Offline inspection of NexLinq's installed .NET assembly subsequently confirmed the full 123-byte telemetry schema, including CPU utilization/clock/power, up to five GPUs, twenty fans, RAM, PSU values, and disk temperatures. The current private Linux pipeline still populates only the already-tested temperature and fan portion; implementation and hardware validation of the additional decoded fields remain pending.
 
-A watched one-shot 123-byte Linux test produced **no visible change** while the display was in background-only mode. The LCD continued showing the old clock value baked into the JPEG. This establishes an important boundary: `0x21` is a working live-data transport, but it does not itself create or enable the widgets that render those values.
-
-The next protocol target is the exact Windows `0x30` widget/configuration transaction that binds native widgets to the `0x21` data stream.
-
-See [`PROTOCOL.md`](PROTOCOL.md) for byte-level details.
+See [`PROTOCOL.md`](PROTOCOL.md) for byte-level details and [`VALIDATION.md`](VALIDATION.md) for the physical test record.
 
 ## Quick start — static JPEG
 
@@ -116,10 +110,10 @@ The current public code is limited to commands observed in the official software
 
 ## Next work
 
-- decode and reproduce the native widget/layout `0x30` configuration;
-- make Linux `0x21` telemetry values visibly render without repeated JPEG uploads;
-- decode the remaining 123-byte telemetry fields;
-- support multi-GPU temperatures and fan/pump telemetry in the live path;
+- map every native widget source-selector ID to its human-readable sensor;
+- populate and validate the newly decoded `0x21` CPU/GPU/RAM fields from Linux;
+- support multiple native widgets and both RTX 3090s after the second GPU is installed;
+- recover placement, sizing, and color behavior without guessing undocumented values;
 - determine whether native fault/warning status can support color/visibility/blinking safely;
 - turn the transport into a reusable library/daemon after the widget path is proven.
 
