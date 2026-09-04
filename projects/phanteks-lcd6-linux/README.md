@@ -49,7 +49,19 @@ Native widgets are physically validated from Linux:
 
 The full Linux `0x21` implementation populates source-confirmed CPU/GPU/RAM/NVMe fields from real telemetry. Unsupported CPU/PSU power fields remain zero rather than being fabricated.
 
-A frozen native widget is not evidence that host telemetry is still arriving: the LCD retains the last native layout/value after host updates stop.
+The private Linux pipeline now derives the required `0x30` source-specific maximum automatically before starting `native-live`. The validated derivations are:
+
+```text
+selectors 7-11 -> 4000 RPM on the validation workstation
+selector 28    -> CPU max clock telemetry
+selector 31    -> GPU 1 max clock telemetry
+selector 32    -> GPU 1 power.max_limit
+selector 42    -> vendor packed RAM maximum
+```
+
+A continuous selector-32 run was physically validated with startup reporting `source=32, max=390`, 512-byte `0x30` ACK, recurring 512-byte `0x21` ACKs, and visible GPU-power updates varying from roughly 11-17 W.
+
+A frozen native current value is not evidence that host telemetry is still arriving: the LCD retains the last native value after host updates stop. In the selector-32 `native-live` run, the current value remained at the final 12 W after sender stop while the earlier 11 W minimum and 17 W maximum still aged out over approximately one visible graph-history width. Therefore host-update stop freezes the retained current value but does not necessarily freeze rolling-history aging; the firmware mechanism is not claimed.
 
 ## Physically validated native selectors
 
@@ -97,6 +109,8 @@ selector 32 GPU power: 390 W
 selector 42 RAM used:  0x3c56 on a host with 60.34 GiB OS-visible RAM
 ```
 
+The private `native-live` path now derives these maxima from the same live telemetry model used to populate `0x21`, and fails clearly if a required clock/power/RAM maximum is unavailable rather than silently sending zero.
+
 ### RAM selector 42 packing
 
 The unusual selector-42 maximum is real vendor behavior, not a decompiler artifact.
@@ -128,6 +142,8 @@ right  = current value
 ```
 
 Physical testing with GPU clock, CPU clock, RAM used, and GPU power shows that the current value updates first while history-derived min/max values can lag. An old min/max value disappeared only after the graph had advanced across the full visible plotting width, strongly indicating that the footer statistics are tied to the visible rolling history window.
+
+The later continuous selector-32 `native-live` test refined this observation: after the sender stopped at a retained 12 W current value, the earlier 11 W minimum and 17 W maximum still aged out over about one visible graph-history width. This proves only the observed LCD behavior; it does not establish whether firmware advances history by repeating the retained current sample or by another internal mechanism.
 
 Do not overclaim the firmware algorithm: recovered NexLinq JavaScript shows analogous rolling-history min/max/current logic, while physical testing proves only the observed LCD behavior.
 
@@ -226,8 +242,7 @@ Published code is limited to derived interoperability facts and paths that have 
 
 - additional NVMe/SATA selectors;
 - remaining fan selectors only when genuine mapped tachometer RPM sources exist;
-- automatic selector-to-max derivation in the private Linux pipeline;
-- fix/extend `native-live` for max-dependent selectors;
+- expose a reusable public convenience layer for automatic selector maxima / continuous native telemetry;
 - device-name / label generalization;
 - multiple simultaneous native widgets;
 - placement, sizing, colors, and alarm behavior;
