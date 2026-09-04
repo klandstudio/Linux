@@ -127,10 +127,17 @@ fan 7-26 -> configured max RPM
 Physically validated examples:
 
 ```text
+7-11 fan RPM: 4000 RPM
 28 CPU clock: 5756 MHz
 31 GPU clock: 2115 MHz
 32 GPU power: 390 W
 42 RAM used:  0x3c56 on 60.34 GiB OS-visible RAM
+```
+
+For the fan batch, `4000` encodes into all three maximum fields as:
+
+```text
+0f a0 0f a0 0f a0
 ```
 
 ### RAM selector 42 maximum
@@ -231,6 +238,11 @@ RAM telemetry is encoded as one byte for whole GiB plus one byte for the two-dig
 | Selector | Metric | Physical result |
 |---:|---|---|
 | 1 | CPU temperature | native line widget and live graph confirmed |
+| 7 | top radiator fan RPM | `0 -> 717 x3` with 4000 RPM maximum |
+| 8 | rear fan RPM | `0 -> 693 x3` with 4000 RPM maximum |
+| 9 | AIO pump RPM | `0 -> 3125 x3` with 4000 RPM maximum |
+| 10 | side fan RPM | `0 -> 539 x3` with 4000 RPM maximum |
+| 11 | bottom fan RPM | `0 -> 498 x3` with 4000 RPM maximum |
 | 27 | CPU utilization | controlled load and integer rounding confirmed |
 | 28 | CPU clock | 4373.353 MHz same sample displayed as 4.37 GHz |
 | 30 | GPU 1 utilization | exact same-sample 71% collector/display correlation |
@@ -283,7 +295,19 @@ No verified Linux CPU-power or PSU telemetry source is present on the validation
 
 Selectors `7-26` are source-confirmed as fan RPM inputs. The NexLinq LCD6-HD UI permits configured fan maxima from `500` to `4000` RPM in `100` RPM steps, default `2000`.
 
-The next physical batch is selectors `7-11`, corresponding in the current Linux packet to top, rear, pump, side, and bottom RPM values. GPU fan percentage from `nvidia-smi` is not treated as physical RPM and is not mapped into these slots.
+Selectors `7-11` are now physically validated against the five RPM slots currently populated by the Linux packet:
+
+```text
+7  top radiator fans
+8  rear fans
+9  AIO pump
+10 side fans
+11 bottom fans
+```
+
+The validation run used `max_value=4000` for all five. Remaining selectors `12-26` are not exposed publicly until a genuine mapped tachometer source exists.
+
+GPU fan percentage from `nvidia-smi` is not physical RPM and is not mapped into these slots.
 
 ## Publication boundary
 
