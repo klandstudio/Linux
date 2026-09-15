@@ -103,6 +103,8 @@ The public native widget builder is conservatively allowlisted to selectors that
 | ID | Metric | Validation |
 |---:|---|---|
 | 1 | CPU temperature | native line graph and live updates |
+| 2 | GPU0 temperature | native line graph confirmed on a two-GPU host |
+| 3 | GPU1 temperature | native line graph confirmed, cross-checked same-sample against host reading |
 | 7 | top radiator fan RPM | `0 -> 717 x3`, max 4000 RPM |
 | 8 | rear fan RPM | `0 -> 693 x3`, max 4000 RPM |
 | 9 | AIO pump RPM | `0 -> 3125 x3`, max 4000 RPM |
@@ -114,10 +116,21 @@ The public native widget builder is conservatively allowlisted to selectors that
 | 31 | GPU 1 clock | 2115 MHz maximum; retained ~1.93 GHz -> fresh 210 MHz transition |
 | 32 | GPU 1 power | exact same-sample 9.46 W -> 9 W current display; 390 W maximum |
 | 42 | RAM used | retained 3.34 GiB -> fresh ~3.47 GiB transition with vendor RAM max packing |
+| 45 | generic percent carrier (recovered label: PSU Efficiency) | correctly rendered an unrelated GPU utilization percent; PSU meaning itself unexercised, see below |
 | 46 | NVMe 0 temperature | first NVMe field physically correlated |
 | 47 | NVMe 1 temperature | second NVMe field; live `33 -> 34 C` behavior physically validated |
 
 The generalized builder does **not** expose arbitrary selector ranges.
+
+### Selector 45 is a generic percent carrier, not exclusively PSU
+
+Selector 45's wire position (payload byte 88) was physically confirmed to accept and correctly render an arbitrary 0-100 value unrelated to its recovered "PSU Efficiency" label — a second GPU's utilization percentage, used because no other native selector was available for it. This does not reclassify selector 45; real PSU telemetry should still use it for its documented meaning when a verified source exists. It establishes that an otherwise-idle percent-typed selector can be repurposed for a different same-typed metric without a decode error or corrupted render. Full detail in [`VALIDATION.md`](VALIDATION.md).
+
+### GPU junction/hotspot and memory-junction temperature are not exposed via `nvidia-smi`/NVML
+
+Confirmed directly on the validation hardware: neither the GPU die's own hotspot/junction temperature nor GPU memory (VRAM) junction temperature has a `nvidia-smi` query field, and `nvidia-smi dmon`'s `mtemp` column returns `-`. This is a driver/tooling limitation, unrelated to the LCD protocol.
+
+These values are obtainable outside NVML via direct GPU register access — [`ThomasBaruzier/gputemps`](https://github.com/ThomasBaruzier/gputemps) is one actively maintained open-source tool for this. Rather than inventing a new native diagnostic element, a register-sourced junction reading was substituted for the ordinary core-temperature value already feeding the physically validated GPU-temperature selectors above (2/3) — same selector, same wire format, different upstream source. This required no protocol change and closes the "presentation architecture" question from [`RESEARCH_STATUS.md`](RESEARCH_STATUS.md) in favor of the hybrid direction: persistent background plus a small number of stock native selector overlays, proven sufficient for a real continuously-live multi-metric dashboard including a metric sourced entirely outside the vendor's own telemetry path. Full detail in [`VALIDATION.md`](VALIDATION.md).
 
 ## `0x30` source-specific maxima
 
@@ -280,12 +293,13 @@ Published code is limited to derived interoperability facts and paths that have 
 - remaining fan selectors only when genuine mapped tachometer RPM sources exist;
 - expand beyond the first physically validated three-item layout;
 - improve compact-label legibility and placement/sizing/colors/alarm behavior;
-- second RTX 3090 behavior after GPU-B is installed;
 - service/autostart packaging.
 
 GPU fan percentage from `nvidia-smi` is not physical RPM and is not mapped into native fan selectors.
 
-CPU power selector `29` and PSU selectors `43-45` remain out of live testing until verified local telemetry sources exist.
+CPU power selector `29` and PSU selectors `43-44`, and `45` in its documented PSU-efficiency meaning, remain out of live testing until verified local telemetry sources exist.
+
+Second-GPU native-widget behavior (selector 3, dual-GPU temperature) is now validated — see the selector table above.
 
 ## Detailed records
 

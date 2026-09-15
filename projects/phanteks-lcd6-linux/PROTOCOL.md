@@ -222,6 +222,8 @@ So the normal telemetry path uses the real whole/hundredths bytes, while the wid
 
 IDs `33-41` remain intentionally unresolved.
 
+Selector 45's wire encoding is confirmed to be a generic 0-100 percent carrier independent of its recovered PSU-efficiency label — see VALIDATION.md's "Selector 45" entry. This is not a reclassification of the selector; real PSU telemetry should still use it for its documented meaning when available.
+
 ## `0x21` — SetHandshakeData telemetry
 
 NexLinq normally sends a 123-byte payload. Payload begins at report offset 11 and report offsets 9-10 contain the payload length.
@@ -274,6 +276,8 @@ RAM telemetry is encoded as one byte for whole GiB plus one byte for the two-dig
 | Selector | Metric | Physical result |
 |---:|---|---|
 | 1 | CPU temperature | native line widget and live graph confirmed |
+| 2 | GPU0 temperature | native line widget confirmed on a two-GPU host |
+| 3 | GPU1 temperature | native line widget confirmed, cross-checked same-sample against host reading |
 | 7 | top radiator fan RPM | `0 -> 717 x3` with 4000 RPM maximum |
 | 8 | rear fan RPM | `0 -> 693 x3` with 4000 RPM maximum |
 | 9 | AIO pump RPM | `0 -> 3125 x3` with 4000 RPM maximum |
@@ -285,6 +289,7 @@ RAM telemetry is encoded as one byte for whole GiB plus one byte for the two-dig
 | 31 | GPU 1 clock | retained ~1.93 GHz -> fresh 210 MHz with 2115 MHz maximum |
 | 32 | GPU 1 power | 9.46 W sample encoded/displayed as 9 W with 390 W maximum |
 | 42 | RAM used | retained 3.34 GiB -> fresh ~3.47 GiB using `0x3c56` max |
+| 45 | generic percent carrier (recovered label: PSU Efficiency) | rendered an unrelated GPU utilization percent correctly; PSU meaning itself unexercised |
 | 46 | NVMe 0 temperature | first NVMe field physically correlated |
 | 47 | NVMe 1 temperature | second NVMe field; `0 -> 33 C`, later `34 C` |
 

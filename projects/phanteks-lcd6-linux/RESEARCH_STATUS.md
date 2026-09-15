@@ -211,3 +211,18 @@ The core Linux protocol problem is substantially solved. The next question is pr
 > Which rendering path gives the best combination of visual fidelity, live telemetry quality, reliability, and development effort without requiring open-ended reverse engineering of the stock native renderer?
 
 The next work should answer that question before returning to low-level UI probing.
+
+---
+
+## Update — presentation architecture resolved; dual-GPU and new selector findings
+
+The hybrid direction (option 3 above: persistent background artwork plus a small number of stock native selector overlays) was pursued and validated as sufficient for a real, continuously live, multi-metric dashboard. This did not require solving arbitrary native diagnostic placement/typography — the unresolved items in "Important current limitations" above remain unresolved and were not needed.
+
+New physically validated findings since the reset:
+
+- **Selectors 2 and 3** (GPU temperature source class, previously source-confirmed only) are physically validated for GPU0 and GPU1 core temperature respectively on a two-GPU host, closing the "second RTX 3090 mapping" gap noted above. See `VALIDATION.md`.
+- **Selector 45** is confirmed as a generic 0-100 percent wire carrier, independent of its recovered "PSU Efficiency" label — physically exercised carrying an unrelated GPU utilization percentage in a pane with no other assigned selector. This is not a reclassification; real PSU telemetry should still use it for its documented meaning when a source exists. See `VALIDATION.md`.
+- **GPU die junction/hotspot temperature and GPU memory (VRAM) junction temperature are not exposed through the standard Linux NVIDIA driver path** (`nvidia-smi`/NVML) on the validation hardware — confirmed directly, not inferred. This is a driver/tooling limitation, unrelated to the LCD protocol itself.
+- Those values were successfully sourced outside NVML (direct GPU register access, via an independent open-source tool — see `VALIDATION.md` for the citation) and displayed by substituting them for the ordinary core-temperature value already feeding the physically validated selectors 2/3, rather than by adding any new selector or native diagnostic mechanism. No protocol change was required.
+
+This last point is the practical answer to the strategic question above, for at least one real metric: the "constrained native" and "hybrid" architectures can carry data that never passed through the vendor's own telemetry path at all, as long as it is mapped onto an already-validated selector's existing wire format. This project's scope remains the Phanteks/NexLinq protocol itself; the register-level temperature source is cited as an application-level integration note, not a protocol finding.

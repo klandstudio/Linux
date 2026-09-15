@@ -418,12 +418,43 @@ The continuous selector-32 test further showed that after host telemetry stopped
 
 This is consistent with recovered NexLinq preview logic, but no claim is made that firmware internally executes the exact JavaScript algorithm.
 
+## Selectors 2 and 3 — dual-GPU temperature, second-GPU native widget — confirmed
+
+Physically validated on a two-GPU workstation. The recovered `2-6` "GPU temperature source class" (see PROTOCOL.md) was previously source-confirmed only; this closes the "second RTX 3090 native-widget behavior" item that was open as of the 2026-09-04 research-status reset.
+
+```text
+selector 2 -> GPU0 core temperature, native line widget confirmed
+selector 3 -> GPU1 core temperature, native line widget confirmed
+```
+
+Both selectors share the same rendering branch as selector 1 (CPU temperature) in the recovered vendor source. Selector 3 in particular was cross-checked same-sample against the host's own GPU1 reading across multiple live cycles with no observed drift, resolving second-GPU temperature as a genuine native selector rather than a carrier/alias.
+
+## Selector 45 — generic numeric-percent transport, independent of its recovered "PSU Efficiency" label — confirmed
+
+Recovered NexLinq UI labels selector 45 as PSU efficiency (see PROTOCOL.md's recovered selector table). No PSU telemetry source exists on the validation host, so this selector was previously listed only as source-confirmed-but-unexercised.
+
+Physical test: payload byte 88 (selector 45's wire position) was populated with an unrelated 0-100 value — a second GPU's utilization percentage, which has no other assigned native selector — instead of a PSU reading. The LCD rendered it correctly as a plain percentage in the pane the selector was assigned to.
+
+Conclusion: selector 45's wire encoding is a **generic numeric-percent carrier** at the protocol level, not intrinsically tied to its recovered PSU label. This project does not reclassify selector 45 as a canonical non-PSU selector — real PSU telemetry should still use it for its documented meaning when available — but it establishes that an otherwise-unused percent-typed selector can carry a different same-typed metric when no dedicated selector exists for it, without a decode error or corrupted render.
+
+## GPU junction/hotspot and memory-junction temperature — driver limitation confirmed, no native selector added
+
+Neither the GPU die's own hotspot/junction temperature nor the GPU memory (VRAM) junction temperature is exposed through the standard Linux NVIDIA driver interface on the validation hardware: `nvidia-smi` has no such query field, and `nvidia-smi dmon`'s `mtemp` column returns `-`. This is a driver/tooling limitation, not evidence about the LCD protocol itself.
+
+These values are obtainable outside NVML, via direct GPU register access. [`ThomasBaruzier/gputemps`](https://github.com/ThomasBaruzier/gputemps) is one actively maintained open-source tool that does this; on the validation hardware it independently reports a GPU die junction/hotspot reading and a separate VRAM-junction reading per GPU, both distinct from the ordinary core temperature `nvidia-smi` already reports.
+
+Rather than inventing a new native diagnostic element for this project's own display protocol work, the register-sourced junction value was substituted for the ordinary core-temperature value already feeding the physically validated selectors 2/3 above — same selector, same byte offset, same rendering path, different upstream source for the number. No new selector, no new wire format, and no change to the already-validated protocol was required. This is presented as an application-level integration note, not a Phanteks/NexLinq protocol finding; it is unrelated to `nvidia-smi`'s driver-level limitation and does not depend on this repository's own protocol work in any way beyond reusing an already-validated selector as the display target.
+
+This closes the open "presentation architecture" question from `RESEARCH_STATUS.md` in favor of the **hybrid** direction: a persistent background plus a small number of stock native selector overlays proved sufficient to carry a real, continuously live, multi-metric dashboard, including a metric sourced entirely outside the vendor's own telemetry path.
+
 ## Current boundary
 
 ### Physically validated native selectors
 
 ```text
 1   CPU temperature
+2   GPU0 temperature
+3   GPU1 temperature
 7   top radiator fan RPM
 8   rear fan RPM
 9   AIO pump RPM
@@ -439,11 +470,13 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 47  NVMe 1 temperature
 ```
 
+Selector 45 is also physically validated, but only as a **generic numeric-percent carrier** — its recovered PSU-efficiency meaning itself remains unexercised (no local PSU telemetry source). See "Selector 45" above before reusing it for a non-PSU metric.
+
 ### Source-confirmed but not yet physically exercised as separate widgets
 
 - fan selectors `12-26`, only when actual mapped RPM sources exist;
 - additional NVMe selectors `48-50` and SATA selectors `51-55`;
-- PSU selectors `43-45` (local live telemetry unavailable).
+- PSU selectors `43-44`, and `45` in its documented PSU-efficiency meaning (local live telemetry unavailable).
 
 ### Intentionally unresolved / unavailable
 
@@ -454,11 +487,11 @@ This is consistent with recovered NexLinq preview logic, but no claim is made th
 - additional native layout families beyond the first validated three-item layout;
 - generalized placement/color/alarm behavior;
 - compact numeric suffix legibility in small panels;
-- second RTX 3090 native-widget behavior.
+- GPU die junction/hotspot and VRAM-junction temperature via the standard Linux NVIDIA driver path (`nvidia-smi`/NVML) — not a protocol limitation, see the dedicated entry above.
 
 ## Next validation targets
 
-With automatic maxima, selector 47, configurable text1 serialization, and a three-item native layout now established, next work should add new information rather than repeat already-proven plumbing:
+With automatic maxima, selector 47, configurable text1 serialization, a three-item native layout, dual-GPU temperature (selectors 2/3), and the selector-45 generic-carrier finding now established, next work should add new information rather than repeat already-proven plumbing:
 
 - additional NVMe/SATA selectors when real local telemetry exists;
 - remaining fan selectors only when a genuine mapped tachometer RPM source is available;
