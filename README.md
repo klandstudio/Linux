@@ -56,6 +56,14 @@ The ENE save sequence centers on:
 
 See [`projects/ene-dram-persistent-rgb/`](projects/ene-dram-persistent-rgb/) for the tested procedure, safety notes, OpenRGB configuration, SignalRGB patch, rollback steps, and register references.
 
+### OMP on Linux — Free Hosted Model Providers
+
+Running the OMP CLI coding agent on Linux Mint against free hosted model tiers that need no credit card.
+
+**Status:** three providers verified by live response on 2026-10-07 (`groq/openai/gpt-oss-20b`, `nvidia/moonshotai/kimi-k3`, `mistral/ministral-3b-latest`) on three separate quota pools. NVIDIA rate limits and credit-exhaustion behavior remain unmeasured.
+
+The main finding is that a model appearing in a provider catalog is not evidence that it works. Six selectors that were fully specified in the catalog — including one priced `$0/$0` — turned out to return 404, 400, 410, or 429. See [`projects/omp/`](projects/omp/) for the verified set, the rejected selectors, the non-interactive probe method, config notes, and the open questions.
+
 ## Scope
 
 This repository is intended to hold Linux-focused hardware projects, reverse engineering, and reusable tooling. Cross-platform companion tools are included when they are part of a Linux-originated hardware investigation. Experimental captures, vendor firmware payloads, private hardware identifiers, extracted vendor assets, and unrelated workstation notes are kept out of the public repository.
