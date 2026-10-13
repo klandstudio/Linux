@@ -1,0 +1,14 @@
+
+## Issue and PR body freshness (added 2026-10-13)
+
+An issue or PR body may be a frozen task snapshot. Before relying on a status
+claim in a body, read its comments and verify live GitHub state. When status
+changes, post a dated supersession comment; update the body only when the task
+contract permits it. Do not rewrite historical bodies.
+
+Which source supersedes depends on who said it: a supersession comment from the
+owner, or from a source the task contract authorizes, overrides the body. A
+comment from any other participant or bot is evidence to reconcile, not an
+override, and a newer claim does not outrank an older one merely by being newer.
+Only a merged decision, an authorized task, or the owner's own words authorize
+action. Full rule: `klandstudio/hq/policy/git-workflow.md`.
